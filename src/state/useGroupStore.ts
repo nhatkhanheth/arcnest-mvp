@@ -1447,7 +1447,7 @@ const actions = {
         syncRemoteBalanceSnapshot(payment.groupId);
       });
 
-      return { ok: true, paymentId, message: result.mode === "mock" ? "Mock payment completed." : "USDC payment confirmed." };
+      return { ok: true, paymentId, message: result.mode === "mock" ? "Demo payment completed." : "Testnet payment confirmed." };
     } catch (error) {
       const now = Date.now();
       const latestPayment = state.payments.find((item) => item.id === paymentId) ?? payment;

@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
 import { CheckCircle2, RotateCcw, ShieldCheck, TriangleAlert } from "lucide-react";
+import { useConnection } from "wagmi";
 import type { Payment, PaymentRequest } from "../../models";
 import type { ArcPaymentMode } from "../../lib/arc";
+import { arcNetwork, isWrongArcNetwork } from "../../lib/arc";
 import { formatUSDC, formatVND, shortAddress } from "../../lib/format";
 import { Button } from "../ui/Button";
 import { BottomSheet } from "../ui/Modal";
@@ -34,6 +36,7 @@ export function PaymentSheet({
   onMockFail,
   onRetry
 }: PaymentSheetProps) {
+  const connection = useConnection();
   const insufficient = request ? Number(request.amountUSDC) > Number(walletBalanceUSDC) : false;
 
   if (!request || !payment) {
@@ -42,8 +45,19 @@ export function PaymentSheet({
 
   const paid = payment.status === "paid";
   const failed = payment.status === "failed";
+  const missingConfig = arcNetwork.missingPaymentEnvVars.length > 0;
+  const wrongNetwork = paymentMode === "testnet" && connection.isConnected && isWrongArcNetwork(connection.chainId);
   const title = paid ? "Payment complete" : failed ? "Payment failed" : "Pay with USDC";
-  const subtitle = paymentMode === "real" ? "Signed USDC payment" : "Demo payment mode";
+  const subtitle = paymentMode === "testnet" ? "Testnet payment" : "Demo payment";
+  const confirmLabel = confirming
+    ? "Confirming"
+    : wrongNetwork
+      ? "Wrong network"
+      : missingConfig
+        ? "Demo payment"
+        : paymentMode === "testnet"
+          ? "Testnet payment"
+          : "Demo payment";
 
   return (
     <BottomSheet open={open} title={title} subtitle={subtitle} onClose={onClose}>
@@ -51,7 +65,7 @@ export function PaymentSheet({
         {paid ? (
           <>
             <PaymentStatus state="success" />
-            {payment.txHash ? <Detail label={paymentMode === "real" ? "Tx hash" : "Mock tx"} value={shortAddress(payment.txHash)} /> : null}
+            {payment.txHash ? <Detail label={paymentMode === "testnet" ? "Tx hash" : "Demo tx"} value={shortAddress(payment.txHash)} /> : null}
             <Button fullWidth variant="secondary" onClick={onClose}>
               Done
             </Button>
@@ -86,17 +100,27 @@ export function PaymentSheet({
             <div className="space-y-2">
               <Detail label="From wallet" value={shortAddress(request.fromWalletAddress)} />
               <Detail label="To wallet" value={shortAddress(request.toWalletAddress)} supporting={request.toName} />
-              <Detail label="Network" value="Arc" icon={<ShieldCheck size={16} />} />
+              <Detail label="Network" value={missingConfig ? "Missing config" : paymentMode === "testnet" ? "Arc testnet" : "Demo mode"} icon={<ShieldCheck size={16} />} />
               <Detail label="Status" value={payment.status === "pending" ? "Pending signature" : payment.status} />
               <Detail label="For" value={request.note ?? request.groupName ?? "ArcNest payment"} />
             </div>
+            {wrongNetwork ? (
+              <div className="surface-row rounded-[18px] p-3 text-sm text-[var(--danger)]">
+                Switch your wallet to Arc testnet before confirming.
+              </div>
+            ) : null}
+            {missingConfig ? (
+              <div className="surface-row rounded-[18px] p-3 text-sm text-[var(--text-secondary)]">
+                Arc testnet config is missing, so this confirmation uses demo mode.
+              </div>
+            ) : null}
             {paymentError ? <div className="surface-row rounded-[18px] p-3 text-sm text-[var(--danger)]">{paymentError}</div> : null}
-            <Button fullWidth size="lg" icon={<CheckCircle2 size={18} />} onClick={() => void onConfirmPayment(payment.id)} disabled={confirming}>
-              {confirming ? "Confirming" : paymentMode === "real" ? "Confirm payment" : "Confirm demo payment"}
+            <Button fullWidth size="lg" icon={<CheckCircle2 size={18} />} onClick={() => void onConfirmPayment(payment.id)} disabled={confirming || wrongNetwork}>
+              {confirmLabel}
             </Button>
             {paymentMode === "mock" ? (
               <Button fullWidth variant="secondary" icon={<TriangleAlert size={18} />} onClick={() => onMockFail(payment.id)} disabled={confirming}>
-                Mock failure
+                Demo failure
               </Button>
             ) : null}
           </>

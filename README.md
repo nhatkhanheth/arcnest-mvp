@@ -1,6 +1,6 @@
 # ArcNest MVP
 
-ArcNest is a mobile-first shared expense and USDC payment demo. It supports local mock mode, Firebase anonymous auth with Firestore persistence, QR payment payloads, QR invite payloads, and an optional Arc wallet payment path.
+ArcNest is a mobile-first shared expense and USDC payment demo. It supports local demo mode, Firebase anonymous auth with Firestore persistence, QR payment payloads, QR invite payloads, and an optional Arc testnet wallet payment path.
 
 ## Local Development
 
@@ -11,7 +11,7 @@ npm run build
 npm run preview
 ```
 
-The app can run without Firebase or Arc env vars. Missing Firebase env keeps data in local demo storage. Missing Arc payment env keeps payments in mock mode.
+The app can run without Firebase or Arc env vars. Missing Firebase env keeps data in local demo storage. Missing Arc payment env keeps payments in demo mode.
 
 ## Environment Variables
 
@@ -28,7 +28,7 @@ VITE_FIREBASE_MESSAGING_SENDER_ID=
 VITE_FIREBASE_APP_ID=
 ```
 
-Optional for signed Arc payments. Leave blank to keep mock payment fallback:
+Required for Arc testnet USDC transfers. Leave blank to keep demo payment fallback:
 
 ```bash
 VITE_ARC_RPC_URL=
@@ -36,6 +36,25 @@ VITE_ARC_CHAIN_ID=
 VITE_ARC_EXPLORER_URL=
 VITE_ARC_USDC_ADDRESS=
 ```
+
+Optional. Enables WalletConnect in addition to injected browser wallets:
+
+```bash
+VITE_WALLETCONNECT_PROJECT_ID=
+```
+
+## Arc Testnet Payments
+
+ArcNest only signs an onchain payment when all required Arc variables are present at build time. Vite bakes `VITE_*` values into the deployed bundle, so update Vercel environment variables and redeploy after changing them.
+
+To test a real transfer:
+
+1. Set `VITE_ARC_RPC_URL`, `VITE_ARC_CHAIN_ID`, `VITE_ARC_EXPLORER_URL`, and `VITE_ARC_USDC_ADDRESS`.
+2. Redeploy the app.
+3. Connect a wallet on the same Arc testnet chain ID.
+4. Make sure the payer wallet shown in the payment sheet matches the connected wallet.
+5. Fund the payer wallet with testnet gas and testnet USDC.
+6. Confirm a pending payment and approve the USDC transfer in the wallet.
 
 ## Firebase Setup
 
@@ -89,8 +108,9 @@ Dashboard path:
 4. Build command: `npm run build`.
 5. Output directory: `dist`.
 6. Add all production `VITE_FIREBASE_*` env vars.
-7. Add optional `VITE_ARC_*` env vars only when signed Arc payments are ready.
-8. Deploy.
+7. Add `VITE_ARC_RPC_URL`, `VITE_ARC_CHAIN_ID`, `VITE_ARC_EXPLORER_URL`, and `VITE_ARC_USDC_ADDRESS` when Arc testnet payments are ready.
+8. Add optional `VITE_WALLETCONNECT_PROJECT_ID` if you want WalletConnect.
+9. Deploy.
 
 CLI path:
 
@@ -131,7 +151,7 @@ Do not use Pages source `Deploy from a branch / main / root` for this Vite app. 
 - Paste payment QR payload and confirm Payment Sheet opens.
 - Generate invite QR.
 - Paste invite QR payload and confirm Join Group opens with the invite code.
-- Connect wallet, or confirm mock fallback when Arc env is missing.
+- Connect wallet, or confirm demo fallback when Arc env is missing.
 - Pay a pending balance.
 - Confirm payment becomes paid and activity updates.
 - Reload the app and confirm data remains.
@@ -143,6 +163,6 @@ Do not use Pages source `Deploy from a branch / main / root` for this Vite app. 
 ## Known MVP Limits
 
 - Camera QR scanning is not implemented yet; paste payload is the demo fallback.
-- Arc payments use mock mode until all `VITE_ARC_*` payment settings are configured.
+- Arc payments use demo mode until `VITE_ARC_RPC_URL`, `VITE_ARC_CHAIN_ID`, `VITE_ARC_EXPLORER_URL`, and `VITE_ARC_USDC_ADDRESS` are configured and the app is redeployed.
 - Wallet recovery, backup, and password flows are placeholders.
 - Firestore rules must be hardened for production access control before a public launch.

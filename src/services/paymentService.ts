@@ -105,7 +105,7 @@ export async function executeUSDCPayment(payment: Payment, now = Date.now()): Pr
   const usdcAddress = arcNetwork.usdcAddress;
 
   if (!chainId || !usdcAddress) {
-    throw new Error(`Arc payment env is incomplete. Missing ${arcNetwork.missingPaymentEnvVars.join(", ")}.`);
+    throw new Error(`Arc testnet payment config is incomplete. Missing ${arcNetwork.missingPaymentEnvVars.join(", ")}.`);
   }
 
   const connection = getConnection(wagmiConfig);
@@ -137,7 +137,7 @@ export async function executeUSDCPayment(payment: Payment, now = Date.now()): Pr
   });
 
   return {
-    mode: "real",
+    mode: "testnet",
     txHash
   };
 }

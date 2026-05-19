@@ -231,7 +231,7 @@ export function App() {
         confirming={paymentBusy}
         onConfirmPayment={confirmPayment}
         onMockFail={(id) => {
-          setPaymentError("Mock failure was triggered for demo testing.");
+          setPaymentError("Demo failure was triggered for testing.");
           markPaymentFailed(id);
         }}
         onRetry={(id) => {

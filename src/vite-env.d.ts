@@ -11,4 +11,5 @@ interface ImportMetaEnv {
   readonly VITE_ARC_CHAIN_ID?: string;
   readonly VITE_ARC_EXPLORER_URL?: string;
   readonly VITE_ARC_USDC_ADDRESS?: string;
+  readonly VITE_WALLETCONNECT_PROJECT_ID?: string;
 }

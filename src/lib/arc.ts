@@ -1,4 +1,5 @@
 import { createConfig, http, injected } from "wagmi";
+import { walletConnect } from "wagmi/connectors";
 import { defineChain, isAddress, type Address } from "viem";
 
 const fallbackLocalChainId = 31337;
@@ -9,10 +10,12 @@ const arcChainId = parseChainId(readEnv("VITE_ARC_CHAIN_ID"));
 const arcExplorerUrl = stripTrailingSlash(readEnv("VITE_ARC_EXPLORER_URL"));
 const rawUsdcAddress = readEnv("VITE_ARC_USDC_ADDRESS");
 const arcUsdcAddress = rawUsdcAddress && isAddress(rawUsdcAddress) ? (rawUsdcAddress as Address) : undefined;
+const walletConnectProjectId = readEnv("VITE_WALLETCONNECT_PROJECT_ID");
 
 const missingPaymentEnvVars = [
   arcRpcUrl ? undefined : "VITE_ARC_RPC_URL",
   arcChainId ? undefined : "VITE_ARC_CHAIN_ID",
+  arcExplorerUrl ? undefined : "VITE_ARC_EXPLORER_URL",
   arcUsdcAddress ? undefined : "VITE_ARC_USDC_ADDRESS"
 ].filter(Boolean) as string[];
 
@@ -23,6 +26,8 @@ export const arcNetwork = {
   rpcUrl: arcRpcUrl,
   explorerUrl: arcExplorerUrl,
   usdcAddress: arcUsdcAddress,
+  walletConnectProjectId,
+  walletConnectEnabled: Boolean(walletConnectProjectId),
   hasPaymentConfig: missingPaymentEnvVars.length === 0,
   missingPaymentEnvVars
 };
@@ -53,16 +58,32 @@ export const arcChain = defineChain({
 
 export const wagmiConfig = createConfig({
   chains: [arcChain],
-  connectors: [injected({ shimDisconnect: true })],
+  connectors: [
+    injected({ shimDisconnect: true }),
+    ...(walletConnectProjectId
+      ? [
+          walletConnect({
+            projectId: walletConnectProjectId,
+            showQrModal: true,
+            metadata: {
+              name: "ArcNest",
+              description: "Shared payments on Arc testnet",
+              url: typeof window === "undefined" ? "https://arcnest.vercel.app" : window.location.origin,
+              icons: [typeof window === "undefined" ? "https://arcnest.vercel.app/icon.svg" : `${window.location.origin}/icon.svg`]
+            }
+          })
+        ]
+      : [])
+  ],
   transports: {
-    [arcChain.id]: http(arcNetwork.rpcUrl || undefined)
+    [arcChain.id]: http(arcNetwork.rpcUrl || fallbackLocalRpcUrl)
   }
 });
 
-export type ArcPaymentMode = "real" | "mock";
+export type ArcPaymentMode = "testnet" | "mock";
 
 export function getArcPaymentMode(): ArcPaymentMode {
-  return arcNetwork.hasPaymentConfig ? "real" : "mock";
+  return arcNetwork.hasPaymentConfig ? "testnet" : "mock";
 }
 
 export function isWrongArcNetwork(chainId?: number) {
@@ -70,7 +91,7 @@ export function isWrongArcNetwork(chainId?: number) {
 }
 
 export function formatArcChain() {
-  return arcNetwork.chainId ? `Arc (${arcNetwork.chainId})` : "Arc mock";
+  return arcNetwork.chainId ? `Arc testnet (${arcNetwork.chainId})` : "Arc config missing";
 }
 
 export function getArcExplorerTxUrl(txHash: string) {
@@ -102,6 +123,16 @@ export function getFriendlyWalletError(error: unknown) {
   }
 
   return message;
+}
+
+export function getArcEnvReport() {
+  return [
+    { key: "VITE_ARC_RPC_URL", present: Boolean(arcRpcUrl) },
+    { key: "VITE_ARC_CHAIN_ID", present: Boolean(arcChainId) },
+    { key: "VITE_ARC_EXPLORER_URL", present: Boolean(arcExplorerUrl) },
+    { key: "VITE_ARC_USDC_ADDRESS", present: Boolean(arcUsdcAddress) },
+    { key: "VITE_WALLETCONNECT_PROJECT_ID", present: Boolean(walletConnectProjectId), optional: true }
+  ];
 }
 
 function readEnv(key: string) {

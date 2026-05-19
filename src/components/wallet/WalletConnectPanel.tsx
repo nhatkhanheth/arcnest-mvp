@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { LogOut, PlugZap, RefreshCcw, Wallet } from "lucide-react";
 import { useConnect, useConnection, useDisconnect, useSwitchChain } from "wagmi";
-import { arcNetwork, formatArcChain, getArcPaymentMode, getFriendlyWalletError, isWrongArcNetwork } from "../../lib/arc";
+import { arcNetwork, formatArcChain, getArcEnvReport, getArcPaymentMode, getFriendlyWalletError, isWrongArcNetwork } from "../../lib/arc";
 import { shortAddress } from "../../lib/format";
 import { useSettingsStore } from "../../state/useSettingsStore";
 import { Button } from "../ui/Button";
@@ -20,8 +20,10 @@ export function WalletConnectPanel() {
 
   const paymentMode = getArcPaymentMode();
   const wrongNetwork = isWrongArcNetwork(connection.chainId);
+  const missingConfig = arcNetwork.missingPaymentEnvVars.length > 0;
   const walletError = localError ?? getFirstFriendlyError(connectError, disconnectError, switchError);
   const connectedAddress = connection.address ? shortAddress(connection.address) : "Not connected";
+  const connectableWallets = connectors.filter((connector) => connector.type !== "injected" || typeof window !== "undefined");
 
   useEffect(() => {
     if (!connection.isConnected || !connection.address) {
@@ -59,12 +61,11 @@ export function WalletConnectPanel() {
     upsertConnectedWallet
   ]);
 
-  async function connectWallet() {
+  async function connectWallet(connector = connectableWallets[0]) {
     setLocalError(undefined);
-    const connector = connectors[0];
 
     if (!connector) {
-      setLocalError("No browser wallet was found. Install or unlock MetaMask, Rabby, or another injected wallet.");
+      setLocalError("No wallet connector is available. Install a browser wallet or add WalletConnect config.");
       return;
     }
 
@@ -120,16 +121,22 @@ export function WalletConnectPanel() {
           </p>
         </div>
         <NetworkBadge
-          status={wrongNetwork ? "wrong" : paymentMode === "real" ? "active" : "mock"}
-          label={wrongNetwork ? "Wrong network" : paymentMode === "real" ? formatArcChain() : "Mock fallback"}
+          status={wrongNetwork ? "wrong" : missingConfig ? "missing" : paymentMode === "testnet" ? "active" : "mock"}
+          label={wrongNetwork ? "Wrong network" : missingConfig ? "Missing config" : paymentMode === "testnet" ? formatArcChain() : "Demo payment"}
         />
       </div>
 
       {walletError ? <div className="surface-row mt-4 rounded-[18px] p-3 text-sm text-[var(--danger)]">{walletError}</div> : null}
 
-      {paymentMode === "mock" ? (
+      {missingConfig ? (
         <div className="surface-row mt-4 rounded-[18px] p-3 text-sm text-[var(--text-secondary)]">
-          Demo mode is on. Payments complete with a mock confirmation until Arc payment settings are added.
+          Missing {arcNetwork.missingPaymentEnvVars.join(", ")}. Payments stay in demo mode until these are set in Vercel and the app is redeployed.
+        </div>
+      ) : null}
+
+      {paymentMode === "testnet" && !wrongNetwork ? (
+        <div className="surface-row mt-4 rounded-[18px] p-3 text-sm text-[var(--text-secondary)]">
+          Testnet mode is ready. Confirming a payment will request a USDC transfer in your wallet.
         </div>
       ) : null}
 
@@ -139,9 +146,11 @@ export function WalletConnectPanel() {
             Disconnect
           </Button>
         ) : (
-          <Button icon={<Wallet size={16} />} onClick={() => void connectWallet()} disabled={connecting}>
-            {connecting ? "Connecting" : "Connect"}
-          </Button>
+          connectableWallets.slice(0, 2).map((connector) => (
+            <Button key={connector.uid} icon={<Wallet size={16} />} onClick={() => void connectWallet(connector)} disabled={connecting}>
+              {connecting ? "Connecting" : connector.name}
+            </Button>
+          ))
         )}
         {wrongNetwork ? (
           <Button variant="secondary" icon={<RefreshCcw size={16} />} onClick={() => void switchToArc()} disabled={switching}>
@@ -149,11 +158,31 @@ export function WalletConnectPanel() {
           </Button>
         ) : (
           <Button variant="secondary" icon={<PlugZap size={16} />} disabled>
-            {paymentMode === "real" ? "Ready" : "Demo"}
+            {missingConfig ? "Missing config" : paymentMode === "testnet" ? "Testnet" : "Demo"}
           </Button>
         )}
       </div>
+
+      {import.meta.env.DEV ? <ArcEnvDebug /> : null}
     </Card>
+  );
+}
+
+function ArcEnvDebug() {
+  return (
+    <div className="surface-row mt-4 rounded-[18px] p-3">
+      <p className="text-xs font-semibold text-[var(--text-muted)]">Dev env check</p>
+      <div className="mt-2 space-y-1">
+        {getArcEnvReport().map((item) => (
+          <div key={item.key} className="flex items-center justify-between gap-3 text-xs">
+            <span className="number truncate text-[var(--text-secondary)]">{item.key}</span>
+            <span className={item.present ? "text-[var(--success)]" : item.optional ? "text-[var(--text-muted)]" : "text-[var(--warning)]"}>
+              {item.present ? "present" : item.optional ? "optional missing" : "missing"}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
