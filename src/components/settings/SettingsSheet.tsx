@@ -10,11 +10,11 @@ import {
   Languages,
   Lock,
   Moon,
+  RotateCcw,
   ShieldCheck,
   SlidersHorizontal,
   Twitter,
   Trash2,
-  Wallet,
   WalletCards
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
@@ -30,6 +30,7 @@ type SettingsSheetProps = {
   open: boolean;
   wallet: WalletModel;
   onClose: () => void;
+  onResetOnboarding: () => void;
 };
 
 const languages: Array<{ value: LanguageCode; label: string }> = [
@@ -53,7 +54,7 @@ const splitModes: Array<{ value: SettingsSplitMode; label: string }> = [
   { value: "treasury", label: "Treasury" }
 ];
 
-export function SettingsSheet({ open, wallet, onClose }: SettingsSheetProps) {
+export function SettingsSheet({ open, wallet, onClose, onResetOnboarding }: SettingsSheetProps) {
   const settings = useSettingsStore();
   const { seedDemoData } = useGroupStore();
   const activeWallet = settings.activeWallet;
@@ -84,14 +85,16 @@ export function SettingsSheet({ open, wallet, onClose }: SettingsSheetProps) {
               removable={settings.wallets.length > 1}
             />
           ))}
-          <Button fullWidth variant="muted" icon={<Wallet size={16} />} onClick={settings.addWalletMock}>
-            Add wallet mock
-          </Button>
-          <ActionRow label="Backup wallet" detail="Placeholder for recovery flow" />
+          {settings.wallets.length === 0 ? (
+            <div className="surface-row rounded-[18px] p-4 text-sm text-[var(--text-secondary)]">
+              No external wallet is connected. Use MetaMask, Rabby, or WalletConnect from the Wallet screen.
+            </div>
+          ) : null}
+          <ActionRow label="Backup wallet" detail="Coming soon. Never enter seed phrases or private keys here." />
           <ToggleRow label="Auto-lock wallet" enabled={settings.autoLockWallet} onToggle={() => settings.toggle("autoLockWallet")} />
-          <ActionRow label="Change password" detail="Placeholder for local password flow" />
+          <ActionRow label="App passcode" detail="Coming soon. No wallet secrets are stored in ArcNest." />
           <div className="surface-row rounded-[18px] p-4 text-sm text-[var(--text-secondary)]">
-            Wallet controls are MVP mocks. Keep recovery details private when real wallet auth is added.
+            External wallets only for this MVP. ArcNest never asks for a seed phrase or private key.
           </div>
         </SettingsSection>
 
@@ -111,7 +114,7 @@ export function SettingsSheet({ open, wallet, onClose }: SettingsSheetProps) {
             ))}
           </Select>
           <div className="surface-row rounded-[18px] p-4 text-sm text-[var(--text-secondary)]">
-            Display conversion uses mock FX rates. Balances still calculate internally in VND and USDC.
+            Display conversion uses a fixed MVP FX rate. Balances still calculate internally in VND and USDC.
           </div>
         </SettingsSection>
 
@@ -145,6 +148,9 @@ export function SettingsSheet({ open, wallet, onClose }: SettingsSheetProps) {
             onToggle={() => settings.toggle("showWalletAddress")}
             icon={settings.showWalletAddress ? <Eye size={16} /> : <EyeOff size={16} />}
           />
+          <Button fullWidth variant="muted" icon={<RotateCcw size={16} />} onClick={onResetOnboarding}>
+            Reset onboarding
+          </Button>
         </SettingsSection>
 
         <SettingsSection icon={<SlidersHorizontal size={18} />} title="Group Defaults">

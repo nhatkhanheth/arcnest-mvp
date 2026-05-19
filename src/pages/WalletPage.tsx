@@ -6,9 +6,11 @@ import { ThemeToggle } from "../components/ui/ThemeToggle";
 import { NetworkBadge } from "../components/wallet/NetworkBadge";
 import { WalletConnectPanel } from "../components/wallet/WalletConnectPanel";
 import { soundSettings } from "../data/mockData";
+import { arcNetwork, formatArcChain, getArcPaymentMode, isWrongArcNetwork } from "../lib/arc";
 import { convertUSDCToDisplayAmount, formatUSDC, formatVND, shortAddress } from "../lib/format";
-import type { PaymentRequest, ThemeMode } from "../models";
+import type { ThemeMode } from "../models";
 import { useState } from "react";
+import { useConnection } from "wagmi";
 import { useGroupStore } from "../state/useGroupStore";
 import { useSettingsStore } from "../state/useSettingsStore";
 
@@ -16,28 +18,20 @@ type WalletPageProps = {
   theme: ThemeMode;
   onToggleTheme: () => void;
   onOpenQR: (mode?: "scan" | "myqr" | "payload" | "invite") => void;
-  onOpenPayment: (request: PaymentRequest) => void;
 };
 
-export function WalletPage({ theme, onToggleTheme, onOpenQR, onOpenPayment }: WalletPageProps) {
+export function WalletPage({ theme, onToggleTheme, onOpenQR }: WalletPageProps) {
   const { wallet } = useGroupStore();
-  const { activeWallet, displayCurrency, primaryWallet, showWalletAddress } = useSettingsStore();
+  const { activeWallet, displayCurrency, showWalletAddress } = useSettingsStore();
+  const connection = useConnection();
   const [settings, setSettings] = useState(soundSettings);
+  const paymentMode = getArcPaymentMode();
+  const missingConfig = arcNetwork.missingPaymentEnvVars.length > 0;
+  const wrongNetwork = paymentMode === "testnet" && connection.isConnected && isWrongArcNetwork(connection.chainId);
+  const modeLabel = wrongNetwork ? "Wrong network" : missingConfig ? "Missing config" : connection.isConnected ? formatArcChain() : "Connect wallet";
 
   function toggleSound(id: string, enabled: boolean) {
     setSettings((current) => current.map((item) => (item.id === id ? { ...item, enabled } : item)));
-  }
-
-  function openSend() {
-    onOpenPayment({
-      id: "wallet_send_preview",
-      toName: "Mai",
-      toWalletAddress: "0x764E1e967B3e2159a103949D61d0C084e6236Dd2",
-      fromWalletAddress: primaryWallet.address,
-      amountUSDC: "15.00",
-      amountVND: 375000,
-      note: "Wallet send preview"
-    });
   }
 
   return (
@@ -53,12 +47,12 @@ export function WalletPage({ theme, onToggleTheme, onOpenQR, onOpenPayment }: Wa
             <p className="text-sm font-semibold text-[var(--text-muted)]">Wallet address</p>
             <p className="number mt-2 truncate text-lg font-bold">{showWalletAddress ? shortAddress(activeWallet.address) : "Hidden"}</p>
           </div>
-          <Button aria-label="Copy address" variant="muted" size="icon" onClick={() => void navigator.clipboard?.writeText(activeWallet.address)}>
+          <Button aria-label="Copy address" variant="muted" size="icon" onClick={() => void navigator.clipboard?.writeText(activeWallet.address)} disabled={!activeWallet.address}>
             <Copy size={18} />
           </Button>
         </div>
         <div className="mt-4 flex items-center justify-between gap-3">
-          <NetworkBadge />
+          <NetworkBadge status={wrongNetwork ? "wrong" : missingConfig ? "missing" : paymentMode === "testnet" && connection.isConnected ? "active" : "mock"} label={modeLabel} />
           <span className="text-sm text-[var(--text-muted)]">{activeWallet.label}</span>
         </div>
         <div className="mt-5">
@@ -68,8 +62,11 @@ export function WalletPage({ theme, onToggleTheme, onOpenQR, onOpenPayment }: Wa
             {displayCurrency === "USDC" ? formatVND(wallet.balanceVND) : convertUSDCToDisplayAmount(wallet.balanceUSDC, displayCurrency)}
           </p>
         </div>
+        <div className="surface-row mt-5 rounded-[18px] p-3 text-sm text-[var(--text-secondary)]">
+          Testnet only. Use a new test wallet, never enter a seed phrase or private key, and do not use real funds.
+        </div>
         <div className="mt-5 grid grid-cols-2 gap-3">
-          <Button variant="muted" icon={<ArrowUpRight size={18} />} onClick={openSend}>
+          <Button variant="muted" icon={<ArrowUpRight size={18} />} disabled title="Create a group balance before paying.">
             Send
           </Button>
           <Button variant="muted" icon={<ArrowDownLeft size={18} />} onClick={() => onOpenQR("myqr")}>
@@ -92,7 +89,7 @@ export function WalletPage({ theme, onToggleTheme, onOpenQR, onOpenPayment }: Wa
 
       <Card>
         <h2 className="font-display text-lg font-bold">Sound</h2>
-        <p className="mt-1 text-sm text-[var(--text-muted)]">Sound events are still mocked for this MVP.</p>
+        <p className="mt-1 text-sm text-[var(--text-muted)]">Sound preferences for app feedback.</p>
         <div className="mt-4 space-y-3">
           {settings.map((item) => (
             <SoundToggle key={item.id} label={item.label} enabled={item.enabled} onChange={(enabled) => toggleSound(item.id, enabled)} />

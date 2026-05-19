@@ -1,6 +1,8 @@
 # ArcNest MVP
 
-ArcNest is a mobile-first shared expense and USDC payment demo. It supports local demo mode, Firebase anonymous auth with Firestore persistence, QR payment payloads, QR invite payloads, and an optional Arc testnet wallet payment path.
+ArcNest is a mobile-first shared expense and USDC payment MVP for public testnet testing. It supports Firebase anonymous auth with Firestore persistence, QR payment payloads, QR invite payloads, demo payment fallback, and an optional Arc testnet wallet payment path.
+
+This repo is not production-safe or mainnet-ready yet. Use testnet only, use a new test wallet, never enter seed phrases or private keys, and do not use real funds.
 
 ## Local Development
 
@@ -11,7 +13,7 @@ npm run build
 npm run preview
 ```
 
-The app can run without Firebase or Arc env vars. Missing Firebase env keeps data in local demo storage. Missing Arc payment env keeps payments in demo mode.
+The app can run without Firebase or Arc env vars for local UI checks. Missing Firebase env keeps writes local to the browser. Missing Arc payment env keeps payments in demo mode.
 
 ## Environment Variables
 
@@ -26,6 +28,7 @@ VITE_FIREBASE_PROJECT_ID=
 VITE_FIREBASE_STORAGE_BUCKET=
 VITE_FIREBASE_MESSAGING_SENDER_ID=
 VITE_FIREBASE_APP_ID=
+VITE_FIREBASE_MEASUREMENT_ID=
 ```
 
 Required for Arc testnet USDC transfers. Leave blank to keep demo payment fallback:
@@ -47,14 +50,16 @@ VITE_WALLETCONNECT_PROJECT_ID=
 
 ArcNest only signs an onchain payment when all required Arc variables are present at build time. Vite bakes `VITE_*` values into the deployed bundle, so update Vercel environment variables and redeploy after changing them.
 
-To test a real transfer:
+To test a real testnet transfer:
 
 1. Set `VITE_ARC_RPC_URL`, `VITE_ARC_CHAIN_ID`, `VITE_ARC_EXPLORER_URL`, and `VITE_ARC_USDC_ADDRESS`.
 2. Redeploy the app.
-3. Connect a wallet on the same Arc testnet chain ID.
+3. Connect a new test wallet on the same Arc testnet chain ID.
 4. Make sure the payer wallet shown in the payment sheet matches the connected wallet.
-5. Fund the payer wallet with testnet gas and testnet USDC.
+5. Fund the payer wallet with testnet native token and testnet USDC.
 6. Confirm a pending payment and approve the USDC transfer in the wallet.
+
+ArcNest never asks for private keys or seed phrases. Wallet connection is external wallet only for this MVP.
 
 ## Firebase Setup
 
@@ -63,7 +68,7 @@ To test a real transfer:
 3. Enable Authentication.
 4. Enable the Anonymous sign-in provider. Firebase docs: https://firebase.google.com/docs/auth/web/anonymous-auth
 5. Create a Cloud Firestore database in production mode.
-6. Add Firestore security rules for authenticated anonymous users before sharing publicly. Firestore rules docs: https://firebase.google.com/docs/firestore/security/get-started
+6. Add Firestore security rules for authenticated anonymous users before sharing publicly. This repo includes a safer MVP baseline in `firestore.rules`.
 
 The app writes these top-level collections:
 
@@ -81,6 +86,26 @@ groups/{groupId}/balanceSnapshots/current
 invites/{inviteCode}
 ```
 
+## Firestore Rules Direction
+
+Do not use `allow read, write: if true;` for public testing. Only use that pattern for a temporary local emulator experiment, never for a deployed Firebase project.
+
+The included `firestore.rules` baseline is intended to enforce:
+
+- signed-in users only
+- group members can read group data
+- owner/admin can manage members
+- permitted roles can create/edit expenses
+- payer can update their own payment status
+- important records are not hard-deleted
+
+Remaining gaps before real users:
+
+- invite joins need abuse/rate limiting
+- role transitions need deeper server-side validation
+- payment status should be verified by a backend or Cloud Function
+- Firestore rules should be tested with the Firebase Emulator Suite before public traffic
+
 ## Demo Seed Data
 
 In development only, open Settings and use `Seed C1K demo data`.
@@ -94,7 +119,7 @@ It seeds:
 - 1 paid payment
 - recent activity
 
-Production does not auto-seed demo data. Create or join a group from the app, or seed only in development.
+Production does not auto-seed demo data. First public visits start from onboarding and an empty account.
 
 ## Vercel Deployment
 
@@ -139,7 +164,7 @@ After pushing to `main`, enable Pages:
 
 Do not use Pages source `Deploy from a branch / main / root` for this Vite app. That serves raw source files and causes a blank page.
 
-## Demo Test Checklist
+## Public MVP Test Checklist
 
 - Open app and confirm anonymous auth starts when Firebase env is present.
 - Confirm user profile document is created under `users/{uid}`.
@@ -164,5 +189,5 @@ Do not use Pages source `Deploy from a branch / main / root` for this Vite app. 
 
 - Camera QR scanning is not implemented yet; paste payload is the demo fallback.
 - Arc payments use demo mode until `VITE_ARC_RPC_URL`, `VITE_ARC_CHAIN_ID`, `VITE_ARC_EXPLORER_URL`, and `VITE_ARC_USDC_ADDRESS` are configured and the app is redeployed.
-- Wallet recovery, backup, and password flows are placeholders.
-- Firestore rules must be hardened for production access control before a public launch.
+- Embedded wallet, import wallet, backup, and passcode flows are coming soon. Do not add seed phrase or private key entry to the client.
+- This MVP is not production-safe or mainnet-ready. Add backend payment verification, audited Firestore rules, rate limiting, and abuse controls before real users.

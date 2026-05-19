@@ -64,11 +64,9 @@ export const permissionPresets: Record<MemberRole, MemberPermissions> = {
 };
 
 export const currentUser: User = {
-  id: "user_minh",
-  displayName: "Minh Tran",
-  email: "minh@example.com",
-  primaryWalletAddress: "0x8F12aB4431c8E91C35B8F1d2A990d8e5b03d9D77",
-  createdAt: now - 1000 * 60 * 60 * 24 * 120,
+  id: "local_user",
+  displayName: "ArcNest Tester",
+  createdAt: now,
   updatedAt: now,
   lastSeenAt: now,
   settings: {
@@ -79,16 +77,16 @@ export const currentUser: User = {
 };
 
 export const primaryWallet: Wallet = {
-  id: "wallet_minh_arc",
+  id: "wallet_unconnected",
   userId: currentUser.id,
-  address: "0x8F12aB4431c8E91C35B8F1d2A990d8e5b03d9D77",
-  type: "embedded",
-  provider: "privy",
+  address: "",
+  type: "external",
+  provider: "manual",
   chain: "arc",
   isPrimary: true,
-  balanceUSDC: "184.60",
-  balanceVND: 4615000,
-  createdAt: now - 1000 * 60 * 60 * 24 * 90,
+  balanceUSDC: "0.00",
+  balanceVND: 0,
+  createdAt: now,
   updatedAt: now
 };
 

@@ -64,7 +64,7 @@ export function JoinGroupSheet({ open, initialCode, onClose, onOpenQR }: JoinGro
       <div className="space-y-4">
         <Input label="Invite code" value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} />
         <div className="surface-row rounded-[18px] p-4 text-sm text-[var(--text-secondary)]">
-          Codes sync through Firebase when env vars are configured. Local demo codes still work offline.
+          Codes sync through Firebase when cloud sync is configured.
         </div>
         {message ? (
           <div className="rounded-[18px] border border-[var(--warning)]/40 bg-[var(--warning)]/10 p-4 text-sm text-[var(--warning)]">

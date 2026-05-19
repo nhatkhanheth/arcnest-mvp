@@ -38,7 +38,6 @@ export type BalanceSnapshot = {
 
 export function createGroupFromDraft(draft: GroupDraft, currentUser: User, now: number): { group: Group; ownerMember: GroupMember; treasury?: Treasury; inviteCode: string } {
   const id = makeGroupId(draft.name, now);
-  const treasuryWalletAddress = draft.treasuryEnabled ? makeMockWalletAddress(id) : undefined;
 
   return {
     group: {
@@ -50,7 +49,6 @@ export function createGroupFromDraft(draft: GroupDraft, currentUser: User, now: 
       settlementCurrency: "USDC",
       chain: "arc",
       treasuryEnabled: draft.treasuryEnabled,
-      treasuryWalletAddress,
       status: "active",
       createdAt: now,
       updatedAt: now
@@ -67,10 +65,10 @@ export function createGroupFromDraft(draft: GroupDraft, currentUser: User, now: 
       ? {
           groupId: id,
           enabled: true,
-          walletAddress: treasuryWalletAddress,
+          walletAddress: undefined,
           balanceUSDC: "0.00",
           balanceVND: 0,
-          mode: "wallet",
+          mode: "offchain",
           updatedAt: now
         }
       : undefined,
@@ -402,9 +400,4 @@ function makeInviteCode(name: string, now: number) {
     .padEnd(3, "A");
 
   return `${prefix}-${now.toString(36).slice(-4).toUpperCase()}`;
-}
-
-function makeMockWalletAddress(seed: string) {
-  const hex = Array.from(seed).reduce((value, char) => value + char.charCodeAt(0).toString(16), "");
-  return `0x${hex.padEnd(40, "0").slice(0, 40)}`;
 }

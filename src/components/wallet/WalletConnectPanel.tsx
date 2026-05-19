@@ -97,7 +97,7 @@ export function WalletConnectPanel() {
 
   async function switchToArc() {
     if (!arcNetwork.chainId) {
-      setLocalError("Arc chain ID is not configured yet. Add VITE_ARC_CHAIN_ID to enable network switching.");
+      setLocalError("Arc testnet is not configured yet, so network switching is unavailable.");
       return;
     }
 
@@ -122,7 +122,7 @@ export function WalletConnectPanel() {
         </div>
         <NetworkBadge
           status={wrongNetwork ? "wrong" : missingConfig ? "missing" : paymentMode === "testnet" ? "active" : "mock"}
-          label={wrongNetwork ? "Wrong network" : missingConfig ? "Missing config" : paymentMode === "testnet" ? formatArcChain() : "Demo payment"}
+          label={wrongNetwork ? "Wrong network" : missingConfig ? "Missing config" : paymentMode === "testnet" ? (connection.isConnected ? formatArcChain() : "Connect wallet") : "Demo payment"}
         />
       </div>
 
@@ -130,15 +130,19 @@ export function WalletConnectPanel() {
 
       {missingConfig ? (
         <div className="surface-row mt-4 rounded-[18px] p-3 text-sm text-[var(--text-secondary)]">
-          Missing {arcNetwork.missingPaymentEnvVars.join(", ")}. Payments stay in demo mode until these are set in Vercel and the app is redeployed.
+          Arc testnet is not configured yet. Demo payment mode is active and no onchain transaction will be sent.
         </div>
       ) : null}
 
       {paymentMode === "testnet" && !wrongNetwork ? (
         <div className="surface-row mt-4 rounded-[18px] p-3 text-sm text-[var(--text-secondary)]">
-          Testnet mode is ready. Confirming a payment will request a USDC transfer in your wallet.
+          {connection.isConnected ? "Testnet mode is ready. Confirming a payment will request a USDC transfer in your wallet." : "Arc testnet config is ready. Connect a test wallet before paying."}
         </div>
       ) : null}
+
+      <div className="surface-row mt-4 rounded-[18px] p-3 text-sm text-[var(--text-secondary)]">
+        Testnet only. Use a new test wallet. ArcNest never asks for seed phrases or private keys.
+      </div>
 
       <div className="mt-4 grid grid-cols-2 gap-3">
         {connection.isConnected ? (

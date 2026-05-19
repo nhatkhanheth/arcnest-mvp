@@ -75,10 +75,11 @@ import {
 import { subscribeTreasuryTransactions } from "../services/treasuryService";
 import { markUserSeededFromLocal, setUserActiveGroup, type FirebaseUserProfile } from "../services/userService";
 
-const storageKey = "arcnest-local-state-v2";
+const storageKey = "arcnest-local-state-v4";
+const devDemoWalletAddress = "0x8F12aB4431c8E91C35B8F1d2A990d8e5b03d9D77";
 
 type ArcNestState = {
-  version: 3;
+  version: 4;
   currentUser: User;
   wallet: Wallet;
   activeGroupId: string;
@@ -116,23 +117,19 @@ type SyncStatus = {
 };
 
 const initialState: ArcNestState = {
-  version: 3,
+  version: 4,
   currentUser,
   wallet: primaryWallet,
-  activeGroupId: seedGroups[0]?.id ?? "",
-  groups: seedGroups,
-  members: seedMembers,
-  expenses: seedExpenses,
-  payments: seedPayments,
-  treasuries: seedTreasuries,
+  activeGroupId: "",
+  groups: [],
+  members: [],
+  expenses: [],
+  payments: [],
+  treasuries: [],
   treasuryTransactions: [],
-  activities: sortActivities(seedActivities),
+  activities: [],
   balanceSnapshots: {},
-  inviteCodes: {
-    "C1K-82KQ": "group_tennis",
-    "APT-18B": "group_apartment",
-    "DN4-72QA": "group_da_nang"
-  }
+  inviteCodes: {}
 };
 
 let state = loadState();
@@ -209,14 +206,14 @@ function loadState(): ArcNestState {
 
     const parsed = JSON.parse(raw) as Partial<Omit<ArcNestState, "version">> & { version?: number };
 
-    if (parsed.version !== 2 && parsed.version !== 3) {
+    if (parsed.version !== 4) {
       return initialState;
     }
 
     return {
       ...initialState,
       ...parsed,
-      version: 3,
+      version: 4,
       treasuryTransactions: parsed.treasuryTransactions ?? [],
       balanceSnapshots: parsed.balanceSnapshots ?? {},
       currentUser,
@@ -472,17 +469,7 @@ function clearFirebaseScopedState() {
 }
 
 function shouldSeedLocalStateToFirebase() {
-  if (import.meta.env.DEV) {
-    return true;
-  }
-
-  return !isBundledDemoState(state);
-}
-
-function isBundledDemoState(snapshot: ArcNestState) {
-  const seedGroupIds = new Set(seedGroups.map((group) => group.id));
-
-  return snapshot.groups.length > 0 && snapshot.groups.every((group) => seedGroupIds.has(group.id));
+  return false;
 }
 
 async function seedCurrentStateToFirestore(userId: string) {
@@ -591,6 +578,7 @@ function createC1KDemoSeed(current: ArcNestState, now: number): Pick<
   const paidPayment = seedPayments.find((payment) => payment.id === "payment_court_paid");
   const minhMember = demoMembers.find((member) => member.id === minhMemberId);
   const linhMember = demoMembers.find((member) => member.id === linhMemberId);
+  const demoWalletAddress = current.wallet.address || current.currentUser.primaryWalletAddress || devDemoWalletAddress;
 
   if (!demoGroup || !minhMember || !linhMember?.walletAddress || !paidPayment) {
     return {
@@ -617,7 +605,7 @@ function createC1KDemoSeed(current: ArcNestState, now: number): Pick<
       ? {
           ...member,
           userId: current.currentUser.id,
-          walletAddress: current.wallet.address,
+          walletAddress: demoWalletAddress,
           updatedAt: now
         }
       : {
@@ -638,7 +626,7 @@ function createC1KDemoSeed(current: ArcNestState, now: number): Pick<
       balanceId: "balance_group_tennis_member_minh_tennis_member_linh_tennis",
       fromMemberId: minhMemberId,
       toMemberId: linhMemberId,
-      fromWalletAddress: current.wallet.address,
+      fromWalletAddress: demoWalletAddress,
       toWalletAddress: linhMember.walletAddress,
       amountUSDC: "9.80",
       amountVND: 245000,
@@ -652,7 +640,7 @@ function createC1KDemoSeed(current: ArcNestState, now: number): Pick<
     },
     {
       ...paidPayment,
-      toWalletAddress: current.wallet.address,
+      toWalletAddress: demoWalletAddress,
       createdAt: now - 1000 * 60 * 60,
       updatedAt: now - 1000 * 60 * 45,
       confirmedAt: now - 1000 * 60 * 45

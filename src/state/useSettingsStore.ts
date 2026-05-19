@@ -1,15 +1,14 @@
 import { useSyncExternalStore } from "react";
-import { primaryWallet } from "../data/mockData";
 import type { DisplayCurrency, LanguageCode, LocalWallet, SettingsSplitMode, ThemeMode } from "../models";
 import { saveUserSettings, subscribeUserSettings } from "../services/settingsService";
 import type { FirebaseUserProfile } from "../services/userService";
 import { updateUserProfile } from "../services/userService";
 import { softRemoveWallet, subscribeUserWallets, syncWallets, upsertWallet } from "../services/walletService";
 
-const storageKey = "arcnest-settings-v1";
+const storageKey = "arcnest-settings-v2";
 
 export type SettingsState = {
-  version: 1;
+  version: 2;
   language: LanguageCode;
   displayCurrency: DisplayCurrency;
   theme: ThemeMode;
@@ -34,35 +33,26 @@ type ConnectedWalletInput = {
   chainId?: number;
 };
 
+const emptyWallet: LocalWallet = {
+  id: "external_wallet_unconnected",
+  label: "No wallet connected",
+  address: "",
+  type: "external",
+  isPrimary: true,
+  status: "disconnected",
+  createdAt: Date.now()
+};
+
 const initialState: SettingsState = {
-  version: 1,
+  version: 2,
   language: "en",
   displayCurrency: "USDC",
   theme: "arc-dark",
   soundEnabled: true,
   reducedMotion: false,
-  walletConnected: true,
-  wallets: [
-    {
-      id: "local_wallet_embedded",
-      label: "ArcNest embedded",
-      address: primaryWallet.address,
-      type: "embedded",
-      isPrimary: true,
-      status: "active",
-      createdAt: primaryWallet.createdAt
-    },
-    {
-      id: "local_wallet_readonly",
-      label: "Savings watch",
-      address: "0x91C6c36d4B2fA29f6E0a1A3B0d57A50b2A847EC2",
-      type: "readonly",
-      isPrimary: false,
-      status: "active",
-      createdAt: Date.now() - 1000 * 60 * 60 * 24 * 12
-    }
-  ],
-  activeWalletId: "local_wallet_embedded",
+  walletConnected: false,
+  wallets: [],
+  activeWalletId: "",
   autoLockWallet: true,
   requirePaymentConfirmation: true,
   hideSmallBalances: false,
@@ -122,7 +112,7 @@ function loadState(): SettingsState {
 
     const parsed = JSON.parse(raw) as Partial<SettingsState>;
 
-    if (parsed.version !== 1) {
+    if (parsed.version !== 2) {
       return initialState;
     }
 
@@ -177,7 +167,7 @@ export function connectSettingsStoreToFirebase(profile?: FirebaseUserProfile) {
         ...current,
         ...remoteSettings,
         wallets: current.wallets,
-        version: 1,
+        version: 2,
         activeWalletId: remoteSettings.activeWalletId ?? current.activeWalletId
       }));
     },
@@ -271,33 +261,6 @@ const actions = {
   setWalletConnected(walletConnected: boolean) {
     setState((current) => ({ ...current, walletConnected }));
     syncRemoteSettings();
-  },
-  addWalletMock() {
-    let walletToPersist: LocalWallet | undefined;
-    setState((current) => {
-      const now = Date.now();
-      const wallet: LocalWallet = {
-        id: `local_wallet_${now.toString(36)}`,
-        label: `Manual wallet ${current.wallets.length + 1}`,
-        address: makeMockWalletAddress(now),
-        type: "manual",
-        isPrimary: current.wallets.length === 0,
-        status: "active",
-        createdAt: now
-      };
-      walletToPersist = wallet;
-
-      return {
-        ...current,
-        wallets: [...current.wallets, wallet],
-        activeWalletId: wallet.id,
-        walletConnected: true
-      };
-    });
-    syncRemoteSettings();
-    if (walletToPersist) {
-      syncRemoteWallet(walletToPersist);
-    }
   },
   removeWallet(walletId: string) {
     let removedWalletId: string | undefined;
@@ -462,7 +425,7 @@ type BooleanSettingKey = {
 
 function normalizeWallets(wallets: LocalWallet[]) {
   if (wallets.length === 0) {
-    return initialState.wallets;
+    return [];
   }
 
   const hasPrimary = wallets.some((wallet) => wallet.isPrimary);
@@ -477,13 +440,7 @@ function getActiveWallet(snapshot: SettingsState) {
 }
 
 function getPrimaryWallet(snapshot: SettingsState) {
-  return snapshot.wallets.find((wallet) => wallet.isPrimary) ?? snapshot.wallets[0] ?? initialState.wallets[0];
-}
-
-function makeMockWalletAddress(now: number) {
-  const seed = `arcnest${now}${Math.round(Math.random() * 100000)}`;
-  const hex = Array.from(seed).reduce((value, char) => value + char.charCodeAt(0).toString(16), "");
-  return `0x${hex.padEnd(40, "0").slice(0, 40)}`;
+  return snapshot.wallets.find((wallet) => wallet.isPrimary) ?? snapshot.wallets[0] ?? emptyWallet;
 }
 
 function inferWalletProvider(connectorId?: string, connectorName?: string): LocalWallet["provider"] {

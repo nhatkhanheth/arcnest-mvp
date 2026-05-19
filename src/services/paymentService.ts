@@ -94,6 +94,10 @@ export async function executeUSDCPayment(payment: Payment, now = Date.now()): Pr
     throw new Error(validation.message);
   }
 
+  if (payment.status !== "pending") {
+    throw new Error("Only pending payments can be confirmed.");
+  }
+
   if (getArcPaymentMode() === "mock") {
     return {
       mode: "mock",
@@ -155,7 +159,7 @@ export function getPaymentErrorMessage(error: unknown) {
   }
 
   if (normalized.includes("insufficient funds") || normalized.includes("exceeds balance")) {
-    return "Your wallet does not have enough gas or USDC for this payment.";
+    return "Your test wallet does not have enough test funds for this payment.";
   }
 
   if (normalized.includes("wrong network") || normalized.includes("chain")) {
@@ -227,7 +231,7 @@ export function generateMockTxHash(seed: string, now: number) {
 }
 
 function inferGroupId(request: PaymentRequest, members: GroupMember[]) {
-  return members.find((member) => member.walletAddress === request.toWalletAddress || member.walletAddress === request.fromWalletAddress)?.groupId ?? "group_tennis";
+  return members.find((member) => member.walletAddress === request.toWalletAddress || member.walletAddress === request.fromWalletAddress)?.groupId ?? "group_external";
 }
 
 function inferMemberIdFromWallet(walletAddress: string, groupId: string, members: GroupMember[]) {

@@ -4,6 +4,7 @@ import { SettingsSheet } from "../components/settings/SettingsSheet";
 import { BottomNav } from "../components/ui/BottomNav";
 import { CreateGroupSheet } from "../components/groups/CreateGroupSheet";
 import { JoinGroupSheet } from "../components/groups/JoinGroupSheet";
+import { WelcomeScreen } from "../components/onboarding/WelcomeScreen";
 import { PaymentSheet } from "../components/payments/PaymentSheet";
 import { QRPaySheet } from "../components/payments/QRPaySheet";
 import type { NavTab } from "./routes";
@@ -23,6 +24,7 @@ import { connectSettingsStoreToFirebase } from "../state/useSettingsStore";
 import { USDC_VND_RATE } from "../services/balanceService";
 
 type QRMode = "scan" | "myqr" | "payload" | "invite";
+const onboardingStorageKey = "arcnest_onboarding_completed";
 
 export function App() {
   const {
@@ -57,6 +59,7 @@ export function App() {
   const [qrOpen, setQROpen] = useState(false);
   const [qrMode, setQRMode] = useState<QRMode>("scan");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [onboardingComplete, setOnboardingComplete] = useState(() => getStoredOnboardingComplete());
 
   useEffect(() => {
     startAuthStore();
@@ -159,12 +162,33 @@ export function App() {
     setTheme(theme === "light" ? "arc-dark" : "light");
   }
 
+  function completeOnboarding() {
+    setStoredOnboardingComplete(true);
+    setOnboardingComplete(true);
+  }
+
+  function resetOnboarding() {
+    setStoredOnboardingComplete(false);
+    setOnboardingComplete(false);
+    setSettingsOpen(false);
+  }
+
   const selectedGroup = selectedGroupId ? groups.find((group) => group.id === selectedGroupId) : undefined;
   const qrGroup = groups.find((group) => group.id === activeGroupId) ?? groups[0];
   const qrInviteCode = qrGroup ? Object.entries(inviteCodes).find(([, groupId]) => groupId === qrGroup.id)?.[0] : undefined;
   const activePayment = paymentId ? payments.find((payment) => payment.id === paymentId) : undefined;
 
   const showGlobalActions = !selectedGroup && activeTab !== "activity";
+
+  if (!onboardingComplete) {
+    return (
+      <div className="app-shell">
+        <div className="mobile-frame">
+          <WelcomeScreen onContinueDemo={completeOnboarding} onComplete={completeOnboarding} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="app-shell">
@@ -205,7 +229,7 @@ export function App() {
         ) : activeTab === "activity" ? (
           <ActivityPage />
         ) : (
-          <WalletPage theme={theme} onToggleTheme={toggleTheme} onOpenQR={openQR} onOpenPayment={openPayment} />
+          <WalletPage theme={theme} onToggleTheme={toggleTheme} onOpenQR={openQR} />
         )}
 
         <BottomNav active={activeTab} onChange={changeTab} />
@@ -252,9 +276,30 @@ export function App() {
         onEnsureInvite={ensureInviteForQR}
         onClose={() => setQROpen(false)}
       />
-      <SettingsSheet open={settingsOpen} wallet={wallet} onClose={() => setSettingsOpen(false)} />
+      <SettingsSheet open={settingsOpen} wallet={wallet} onClose={() => setSettingsOpen(false)} onResetOnboarding={resetOnboarding} />
     </div>
   );
+}
+
+function getStoredOnboardingComplete() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return window.localStorage.getItem(onboardingStorageKey) === "true";
+}
+
+function setStoredOnboardingComplete(complete: boolean) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (complete) {
+    window.localStorage.setItem(onboardingStorageKey, "true");
+    return;
+  }
+
+  window.localStorage.removeItem(onboardingStorageKey);
 }
 
 function getSyncLabel(authState: ReturnType<typeof useAuthStore>, groupSync: ReturnType<typeof useGroupStore>["firebaseSync"]) {

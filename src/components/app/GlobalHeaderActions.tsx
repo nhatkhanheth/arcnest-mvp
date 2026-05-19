@@ -1,4 +1,6 @@
 import { QrCode, Settings } from "lucide-react";
+import { useConnection } from "wagmi";
+import { arcNetwork, getArcPaymentMode, isWrongArcNetwork } from "../../lib/arc";
 import { Button } from "../ui/Button";
 
 type GlobalHeaderActionsProps = {
@@ -8,8 +10,17 @@ type GlobalHeaderActionsProps = {
 };
 
 export function GlobalHeaderActions({ syncLabel, onOpenSettings, onOpenQR }: GlobalHeaderActionsProps) {
+  const connection = useConnection();
+  const paymentMode = getArcPaymentMode();
+  const missingConfig = arcNetwork.missingPaymentEnvVars.length > 0;
+  const wrongNetwork = paymentMode === "testnet" && connection.isConnected && isWrongArcNetwork(connection.chainId);
+  const modeLabel = wrongNetwork ? "Wrong Network" : missingConfig ? "Missing Config" : connection.isConnected ? "Testnet Mode" : "Testnet Ready";
+
   return (
     <div className="pointer-events-auto absolute right-5 top-[max(16px,env(safe-area-inset-top))] z-20 flex items-center gap-2">
+      <span className="rounded-full border border-[var(--border-soft)] bg-[var(--card-bg)] px-3 py-2 text-xs font-semibold text-[var(--text-muted)]">
+        {modeLabel}
+      </span>
       {syncLabel ? (
         <span className="rounded-full border border-[var(--border-soft)] bg-[var(--card-bg)] px-3 py-2 text-xs font-semibold text-[var(--text-muted)]">
           {syncLabel}
