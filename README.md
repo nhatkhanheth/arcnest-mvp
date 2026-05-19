@@ -100,6 +100,25 @@ npx vercel
 npx vercel --prod
 ```
 
+## GitHub Pages Deployment
+
+This repo includes a GitHub Actions workflow at `.github/workflows/deploy-github-pages.yml`.
+
+For `https://nhatkhanheth.github.io/arcnest-mvp/`, the workflow builds with:
+
+```bash
+BASE_PATH=/arcnest-mvp/ npm run build
+```
+
+After pushing to `main`, enable Pages:
+
+1. Open GitHub repository settings.
+2. Go to `Pages`.
+3. Set Source to `GitHub Actions`.
+4. Wait for the `Deploy GitHub Pages` workflow to finish.
+
+Do not use Pages source `Deploy from a branch / main / root` for this Vite app. That serves raw source files and causes a blank page.
+
 ## Demo Test Checklist
 
 - Open app and confirm anonymous auth starts when Firebase env is present.
