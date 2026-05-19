@@ -1,0 +1,16 @@
+{
+  "name": "ArcNest",
+  "short_name": "ArcNest",
+  "description": "Shared payments for everyday life.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#080810",
+  "theme_color": "#080810",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

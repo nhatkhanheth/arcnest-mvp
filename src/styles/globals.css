@@ -1,0 +1,95 @@
+@import "./theme.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    min-height: 100%;
+    background: var(--bg-main);
+  }
+
+  body {
+    min-height: 100%;
+    margin: 0;
+    background: var(--bg-main);
+    color: var(--text-primary);
+    font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+    letter-spacing: 0;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: geometricPrecision;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+}
+
+@layer components {
+  .app-shell {
+    min-height: 100dvh;
+    background:
+      linear-gradient(180deg, rgba(49, 57, 251, 0.11) 0%, transparent 30%),
+      var(--bg-main);
+  }
+
+  .mobile-frame {
+    width: 100%;
+    max-width: 440px;
+    min-height: 100dvh;
+    margin: 0 auto;
+    position: relative;
+    overflow-x: hidden;
+    background: transparent;
+  }
+
+  .screen-pad {
+    padding: max(16px, env(safe-area-inset-top)) 20px calc(132px + env(safe-area-inset-bottom));
+  }
+
+  .glass-card {
+    border: 1px solid var(--border-soft);
+    background: var(--card-bg);
+    backdrop-filter: blur(20px);
+    box-shadow: 0 18px 50px var(--shadow-soft);
+  }
+
+  .surface-row {
+    border: 1px solid var(--border-soft);
+    background: var(--row-bg);
+  }
+
+  .number {
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+    letter-spacing: 0;
+  }
+
+  .focus-ring {
+    outline: none;
+  }
+
+  .focus-ring:focus-visible {
+    box-shadow: 0 0 0 3px var(--arc-glow);
+  }
+
+  [data-motion="reduced"] *,
+  [data-motion="reduced"] *::before,
+  [data-motion="reduced"] *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+
+  .has-global-actions .screen-pad > header:first-child {
+    padding-right: 94px;
+  }
+}
