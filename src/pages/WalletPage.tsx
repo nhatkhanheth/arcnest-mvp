@@ -18,9 +18,10 @@ type WalletPageProps = {
   theme: ThemeMode;
   onToggleTheme: () => void;
   onOpenQR: (mode?: "scan" | "myqr" | "payload" | "invite") => void;
+  onOpenSend: () => void;
 };
 
-export function WalletPage({ theme, onToggleTheme, onOpenQR }: WalletPageProps) {
+export function WalletPage({ theme, onToggleTheme, onOpenQR, onOpenSend }: WalletPageProps) {
   const { wallet } = useGroupStore();
   const { activeWallet, displayCurrency, showWalletAddress } = useSettingsStore();
   const connection = useConnection();
@@ -66,7 +67,7 @@ export function WalletPage({ theme, onToggleTheme, onOpenQR }: WalletPageProps) 
           Testnet only. Use a new test wallet, never enter a seed phrase or private key, and do not use real funds.
         </div>
         <div className="mt-5 grid grid-cols-2 gap-3">
-          <Button variant="muted" icon={<ArrowUpRight size={18} />} disabled title="Create a group balance before paying.">
+          <Button variant="muted" icon={<ArrowUpRight size={18} />} onClick={onOpenSend} disabled={!activeWallet.address}>
             Send
           </Button>
           <Button variant="muted" icon={<ArrowDownLeft size={18} />} onClick={() => onOpenQR("myqr")}>

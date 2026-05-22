@@ -23,6 +23,7 @@ export type UserSettings = {
 
 export type User = {
   id: string;
+  authUserId?: string;
   displayName: string;
   email?: string;
   primaryWalletAddress?: string;

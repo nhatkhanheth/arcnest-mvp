@@ -7,6 +7,7 @@ import { JoinGroupSheet } from "../components/groups/JoinGroupSheet";
 import { WelcomeScreen } from "../components/onboarding/WelcomeScreen";
 import { PaymentSheet } from "../components/payments/PaymentSheet";
 import { QRPaySheet } from "../components/payments/QRPaySheet";
+import { SendSheet } from "../components/payments/SendSheet";
 import type { NavTab } from "./routes";
 import type { ArcNestInviteQRPayload, ArcNestPaymentQRPayload, PaymentRequest } from "../models";
 import { getArcPaymentMode } from "../lib/arc";
@@ -22,6 +23,7 @@ import { connectGroupStoreToFirebase } from "../state/useGroupStore";
 import { startAuthStore, useAuthStore } from "../state/useAuthStore";
 import { useSettingsStore } from "../state/useSettingsStore";
 import { connectSettingsStoreToFirebase } from "../state/useSettingsStore";
+import { fetchArcUSDCBalance } from "../services/arcBalanceService";
 import { USDC_VND_RATE } from "../services/balanceService";
 
 type QRMode = "scan" | "myqr" | "payload" | "invite";
@@ -42,6 +44,7 @@ export function App() {
     markPaymentFailed,
     retryPayment,
     setPrimaryWalletAddress,
+    setWalletBalance,
     startPayment,
     switchActiveGroup
   } = useGroupStore();
@@ -58,6 +61,7 @@ export function App() {
   const [paymentId, setPaymentId] = useState<string>();
   const [paymentBusy, setPaymentBusy] = useState(false);
   const [paymentError, setPaymentError] = useState<string>();
+  const [sendOpen, setSendOpen] = useState(false);
   const [qrOpen, setQROpen] = useState(false);
   const [qrMode, setQRMode] = useState<QRMode>("scan");
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -75,11 +79,42 @@ export function App() {
 
   useEffect(() => {
     if (!primaryWallet.address) {
+      setWalletBalance({ balanceUSDC: "0", balanceVND: 0 });
       return;
     }
 
     setPrimaryWalletAddress(primaryWallet.address);
-  }, [primaryWallet.address, setPrimaryWalletAddress]);
+  }, [primaryWallet.address, setPrimaryWalletAddress, setWalletBalance]);
+
+  useEffect(() => {
+    if (!primaryWallet.address) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function refreshBalance() {
+      try {
+        const balance = await fetchArcUSDCBalance(primaryWallet.address);
+
+        if (!cancelled) {
+          setWalletBalance(balance);
+        }
+      } catch {
+        if (!cancelled) {
+          setWalletBalance({ balanceUSDC: "0", balanceVND: 0 });
+        }
+      }
+    }
+
+    void refreshBalance();
+    const interval = window.setInterval(() => void refreshBalance(), 20_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [primaryWallet.address, setWalletBalance]);
 
   useEffect(() => {
     if (!onboardingComplete || !pendingInviteCode.current) {
@@ -127,6 +162,15 @@ export function App() {
 
       if (!result.ok) {
         setPaymentError(result.message ?? "Payment could not be completed.");
+      }
+
+      if (primaryWallet.address) {
+        try {
+          const balance = await fetchArcUSDCBalance(primaryWallet.address);
+          setWalletBalance(balance);
+        } catch {
+          setWalletBalance({ balanceUSDC: "0", balanceVND: 0 });
+        }
       }
     } finally {
       setPaymentBusy(false);
@@ -232,7 +276,7 @@ export function App() {
             onOpenQR={openQR}
           />
         ) : activeTab === "home" ? (
-          <HomePage onOpenQR={openQR} onOpenPayment={openPayment} onGoToSplit={() => changeTab("split")} />
+          <HomePage onOpenQR={openQR} onOpenPayment={openPayment} onOpenSend={() => setSendOpen(true)} onGoToSplit={() => changeTab("split")} />
         ) : activeTab === "groups" ? (
           <GroupsPage
             onOpenGroup={(groupId) => {
@@ -250,7 +294,7 @@ export function App() {
         ) : activeTab === "activity" ? (
           <ActivityPage />
         ) : (
-          <WalletPage theme={theme} onToggleTheme={toggleTheme} onOpenQR={openQR} />
+          <WalletPage theme={theme} onToggleTheme={toggleTheme} onOpenQR={openQR} onOpenSend={() => setSendOpen(true)} />
         )}
 
         <BottomNav active={activeTab} onChange={changeTab} />
@@ -284,6 +328,14 @@ export function App() {
           retryPayment(id);
         }}
         onClose={() => setPaymentOpen(false)}
+      />
+      <SendSheet
+        open={sendOpen}
+        fromWalletAddress={primaryWallet.address}
+        activeGroupId={activeGroupId || undefined}
+        activeGroupName={groups.find((group) => group.id === activeGroupId)?.name}
+        onSubmit={openPayment}
+        onClose={() => setSendOpen(false)}
       />
       <QRPaySheet
         open={qrOpen}

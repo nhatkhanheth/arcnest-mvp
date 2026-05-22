@@ -36,7 +36,7 @@ export const arcChain = defineChain({
   id: arcNetwork.chainId,
   name: "Arc Testnet",
   nativeCurrency: {
-    decimals: 18,
+    decimals: 6,
     name: "USDC",
     symbol: "USDC"
   },
@@ -142,7 +142,7 @@ export function getArcAddEthereumChainParams() {
     nativeCurrency: {
       name: "USDC",
       symbol: "USDC",
-      decimals: 18
+      decimals: 6
     },
     rpcUrls: arcNetwork.rpcUrl ? [arcNetwork.rpcUrl] : [],
     blockExplorerUrls: arcNetwork.explorerUrl ? [arcNetwork.explorerUrl] : []

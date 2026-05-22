@@ -45,6 +45,7 @@ export function createGroupFromDraft(draft: GroupDraft, currentUser: User, now: 
       name: draft.name.trim(),
       type: draft.type,
       ownerUserId: currentUser.id,
+      ownerAuthUserId: currentUser.authUserId,
       defaultCurrency: draft.defaultCurrency ?? "VND",
       settlementCurrency: "USDC",
       chain: "arc",
@@ -56,6 +57,7 @@ export function createGroupFromDraft(draft: GroupDraft, currentUser: User, now: 
     ownerMember: createMember({
       groupId: id,
       userId: currentUser.id,
+      authUserId: currentUser.authUserId,
       displayName: currentUser.displayName.split(" ")[0] ?? currentUser.displayName,
       walletAddress: currentUser.primaryWalletAddress,
       role: "owner",
@@ -79,6 +81,7 @@ export function createGroupFromDraft(draft: GroupDraft, currentUser: User, now: 
 export function createMember({
   groupId,
   userId,
+  authUserId,
   displayName,
   walletAddress,
   role,
@@ -86,6 +89,7 @@ export function createMember({
 }: {
   groupId: string;
   userId?: string;
+  authUserId?: string;
   displayName: string;
   walletAddress?: string;
   role: MemberRole;
@@ -95,6 +99,7 @@ export function createMember({
     id: makeMemberId(groupId, displayName, now),
     groupId,
     userId,
+    authUserId,
     displayName: displayName.trim() || "Member",
     walletAddress,
     role,
@@ -247,18 +252,12 @@ export async function persistMember(member: GroupMember) {
   const batch = writeBatch(database);
   batch.set(doc(database, "groups", member.groupId, "members", member.id), stripUndefined(member), { merge: true });
 
-  if (member.userId) {
+  const accessId = member.authUserId ?? member.userId;
+
+  if (accessId) {
     batch.set(
-      doc(database, "groups", member.groupId, "memberAccess", member.userId),
-      stripUndefined({
-        userId: member.userId,
-        memberId: member.id,
-        role: member.role,
-        permissions: member.permissions,
-        status: member.status,
-        inviteCode: member.inviteCode,
-        updatedAt: member.updatedAt
-      }),
+      doc(database, "groups", member.groupId, "memberAccess", accessId),
+      createMemberAccessRecord(member),
       { merge: true }
     );
   }
@@ -289,17 +288,11 @@ export async function persistGroupBundle({
 
   batch.set(doc(database, "groups", group.id), stripUndefined(group), { merge: true });
   batch.set(doc(database, "groups", group.id, "members", ownerMember.id), stripUndefined(ownerMember), { merge: true });
-  if (ownerMember.userId) {
+  const ownerAccessId = ownerMember.authUserId ?? ownerMember.userId;
+  if (ownerAccessId) {
     batch.set(
-      doc(database, "groups", group.id, "memberAccess", ownerMember.userId),
-      stripUndefined({
-        userId: ownerMember.userId,
-        memberId: ownerMember.id,
-        role: ownerMember.role,
-        permissions: ownerMember.permissions,
-        status: ownerMember.status,
-        updatedAt: ownerMember.updatedAt
-      }),
+      doc(database, "groups", group.id, "memberAccess", ownerAccessId),
+      createMemberAccessRecord(ownerMember),
       { merge: true }
     );
   }
@@ -309,7 +302,10 @@ export async function persistGroupBundle({
       id: inviteCode,
       code: inviteCode,
       groupId: group.id,
+      groupName: group.name,
+      groupType: group.type,
       createdByUserId: group.ownerUserId,
+      createdByAuthUserId: group.ownerAuthUserId,
       status: "active",
       createdAt: now,
       updatedAt: now
@@ -401,4 +397,17 @@ function makeInviteCode(name: string, now: number) {
     .padEnd(3, "A");
 
   return `${prefix}-${now.toString(36).slice(-4).toUpperCase()}`;
+}
+
+function createMemberAccessRecord(member: GroupMember) {
+  return stripUndefined({
+    userId: member.userId,
+    authUserId: member.authUserId,
+    memberId: member.id,
+    role: member.role,
+    permissions: member.permissions,
+    status: member.status,
+    inviteCode: member.inviteCode,
+    updatedAt: member.updatedAt
+  });
 }

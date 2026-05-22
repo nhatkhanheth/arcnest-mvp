@@ -12,27 +12,16 @@ import { useSettingsStore } from "../state/useSettingsStore";
 type HomePageProps = {
   onOpenQR: (mode?: "scan" | "myqr" | "payload" | "invite") => void;
   onOpenPayment: (request: PaymentRequest) => void;
+  onOpenSend: () => void;
   onGoToSplit: () => void;
 };
 
-export function HomePage({ onOpenQR, onOpenPayment, onGoToSplit }: HomePageProps) {
+export function HomePage({ onOpenQR, onOpenPayment, onOpenSend, onGoToSplit }: HomePageProps) {
   const { balances, currentUser, globalSummary, members, groups, treasuries, wallet } = useGroupStore();
   const { displayCurrency, primaryWallet } = useSettingsStore();
   const currentMemberIds = new Set(members.filter((member) => member.userId === currentUser.id).map((member) => member.id));
   const needToPay = balances.filter((balance) => currentMemberIds.has(balance.fromMemberId) && balance.status !== "paid");
   const needToReceive = balances.filter((balance) => currentMemberIds.has(balance.toMemberId) && balance.status !== "paid");
-
-  function openQuickSend() {
-    onOpenPayment({
-      id: "quick_send_preview",
-      toName: "Linh",
-      toWalletAddress: "0x4c7DfB4C958D188F957B37c75b8A41F636Ab3C91",
-      fromWalletAddress: primaryWallet.address,
-      amountUSDC: "10.00",
-      amountVND: 250000,
-      note: "Quick send"
-    });
-  }
 
   return (
     <main className="screen-pad space-y-6">
@@ -43,7 +32,7 @@ export function HomePage({ onOpenQR, onOpenPayment, onGoToSplit }: HomePageProps
         </div>
       </header>
 
-      <WalletCard wallet={wallet} onSend={openQuickSend} onReceive={() => onOpenQR("myqr")} />
+      <WalletCard wallet={wallet} onSend={onOpenSend} onReceive={() => onOpenQR("myqr")} />
 
       <Card>
         <div className="flex items-center justify-between">

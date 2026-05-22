@@ -1,11 +1,15 @@
 import { doc, getDoc, setDoc } from "firebase/firestore";
+import type { GroupType } from "../models";
 import { getFirestoreOrThrow, stripUndefined } from "./firestoreHelpers";
 
 export type InviteRecord = {
   id: string;
   code: string;
   groupId: string;
+  groupName?: string;
+  groupType?: GroupType;
   createdByUserId?: string;
+  createdByAuthUserId?: string;
   status: "active" | "revoked" | "expired";
   createdAt: number;
   updatedAt: number;

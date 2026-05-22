@@ -22,6 +22,10 @@ service cloud.firestore {
       return signedIn() && exists(memberAccessPath(groupId, request.auth.uid));
     }
 
+    function isGroupMemberAfter(groupId) {
+      return signedIn() && existsAfter(memberAccessPath(groupId, request.auth.uid));
+    }
+
     function memberRole(groupId) {
       return get(memberAccessPath(groupId, request.auth.uid)).data.role;
     }
@@ -45,18 +49,32 @@ service cloud.firestore {
         && get(invitePath(inviteCode)).data.status == 'active';
     }
 
-    function isSelfInviteJoin(groupId, userId) {
-      return isSelf(userId)
+    function isInviteJoin(groupId) {
+      return signedIn()
+        && request.resource.data.authUserId == request.auth.uid
         && request.resource.data.role == 'member'
         && request.resource.data.status == 'active'
         && hasActiveInvite(groupId, request.resource.data.inviteCode);
+    }
+
+    function isOwnerAccessCreate() {
+      return signedIn()
+        && request.resource.data.authUserId == request.auth.uid
+        && request.resource.data.role == 'owner';
+    }
+
+    function isInviteAccessCreate(groupId) {
+      return isInviteJoin(groupId);
     }
 
     function isPaymentPayer(groupId) {
       return signedIn()
         && resource.data.fromMemberId is string
         && exists(memberPath(groupId, resource.data.fromMemberId))
-        && get(memberPath(groupId, resource.data.fromMemberId)).data.userId == request.auth.uid;
+        && (
+          get(memberPath(groupId, resource.data.fromMemberId)).data.userId == request.auth.uid
+          || get(memberPath(groupId, resource.data.fromMemberId)).data.authUserId == request.auth.uid
+        );
     }
 
     match /users/{userId} {
@@ -77,7 +95,11 @@ service cloud.firestore {
     match /invites/{inviteId} {
       allow read: if signedIn();
       allow create: if signedIn()
-        && (canManageMembers(request.resource.data.groupId) || request.resource.data.createdByUserId == request.auth.uid);
+        && (
+          canManageMembers(request.resource.data.groupId)
+          || request.resource.data.createdByUserId == request.auth.uid
+          || request.resource.data.createdByAuthUserId == request.auth.uid
+        );
       allow update: if signedIn()
         && request.resource.data.groupId == resource.data.groupId
         && (canManageMembers(resource.data.groupId) || resource.data.status == 'active');
@@ -85,16 +107,25 @@ service cloud.firestore {
     }
 
     match /groups/{groupId} {
-      allow create: if signedIn() && request.resource.data.ownerUserId == request.auth.uid;
-      allow read: if isGroupMember(groupId) || (signedIn() && resource.data.ownerUserId == request.auth.uid);
+      allow create: if signedIn()
+        && (
+          request.resource.data.ownerUserId == request.auth.uid
+          || request.resource.data.ownerAuthUserId == request.auth.uid
+        );
+      allow read: if isGroupMember(groupId)
+        || (signedIn()
+          && (
+            resource.data.ownerUserId == request.auth.uid
+            || resource.data.ownerAuthUserId == request.auth.uid
+          ));
       allow update: if canManageMembers(groupId);
       allow delete: if false;
 
       match /memberAccess/{userId} {
         allow read: if isSelf(userId) || canManageMembers(groupId);
         allow create: if canManageMembers(groupId)
-          || (isSelf(userId) && request.resource.data.role == 'owner')
-          || isSelfInviteJoin(groupId, userId);
+          || (isSelf(userId) && isOwnerAccessCreate())
+          || (isSelf(userId) && isInviteAccessCreate(groupId));
         allow update: if canManageMembers(groupId);
         allow delete: if false;
       }
@@ -103,11 +134,9 @@ service cloud.firestore {
         allow read: if isGroupMember(groupId);
         allow create: if canManageMembers(groupId)
           || (signedIn()
-            && request.resource.data.userId == request.auth.uid
+            && request.resource.data.authUserId == request.auth.uid
             && request.resource.data.role == 'owner')
-          || (signedIn()
-            && request.resource.data.userId == request.auth.uid
-            && isSelfInviteJoin(groupId, request.auth.uid));
+          || isInviteJoin(groupId);
         allow update: if canManageMembers(groupId);
         allow delete: if false;
       }
@@ -127,7 +156,7 @@ service cloud.firestore {
 
       match /activities/{activityId} {
         allow read: if isGroupMember(groupId);
-        allow create: if isGroupMember(groupId) || (signedIn() && request.resource.data.actorUserId == request.auth.uid);
+        allow create: if isGroupMember(groupId) || isGroupMemberAfter(groupId) || (signedIn() && request.resource.data.actorUserId == request.auth.uid);
         allow update, delete: if false;
       }
 

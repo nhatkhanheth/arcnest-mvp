@@ -27,6 +27,7 @@ export type Group = {
   name: string;
   type: GroupType;
   ownerUserId: string;
+  ownerAuthUserId?: string;
   defaultCurrency: "VND" | "USD";
   settlementCurrency: "USDC";
   chain: "arc";
@@ -41,6 +42,7 @@ export type GroupMember = {
   id: string;
   groupId: string;
   userId?: string;
+  authUserId?: string;
   displayName: string;
   walletAddress?: string;
   role: MemberRole;

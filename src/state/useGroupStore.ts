@@ -142,6 +142,7 @@ let syncStatus: SyncStatus = {
   loading: false
 };
 let remoteUserId: string | undefined;
+let remoteAuthUserId: string | undefined;
 let membershipsUnsubscribe: (() => void) | undefined;
 const groupUnsubscribes = new Map<string, Array<() => void>>();
 const seededUsers = new Set<string>();
@@ -238,10 +239,11 @@ export function connectGroupStoreToFirebase(profile?: FirebaseUserProfile) {
     return;
   }
 
-  migrateToFirebaseUser(profile);
+  const accountUserId = getProfileAccountUserId(profile);
+  migrateToFirebaseUser(profile, accountUserId);
 
-  if (remoteUserId === profile.id && membershipsUnsubscribe) {
-    if (profile.activeGroupId) {
+  if (remoteUserId === accountUserId && remoteAuthUserId === profile.id && membershipsUnsubscribe) {
+    if (profile.activeGroupId && state.groups.some((group) => group.id === profile.activeGroupId)) {
       setState((current) => ({ ...current, activeGroupId: profile.activeGroupId ?? current.activeGroupId }));
     }
     setSyncStatus({ mode: "firebase", loading: false, error: syncStatus.error });
@@ -251,10 +253,11 @@ export function connectGroupStoreToFirebase(profile?: FirebaseUserProfile) {
   setSyncStatus({ mode: "firebase", loading: true, error: undefined });
   membershipsUnsubscribe?.();
   clearGroupSubscriptions();
-  remoteUserId = profile.id;
+  remoteUserId = accountUserId;
+  remoteAuthUserId = profile.id;
 
   membershipsUnsubscribe = subscribeUserMemberships(
-    profile.id,
+    accountUserId,
     (memberships) => {
       const activeMemberships = memberships.filter((member) => member.status === "active" || member.status === "invited");
       const groupIds = Array.from(new Set(activeMemberships.map((member) => member.groupId)));
@@ -278,30 +281,32 @@ export function connectGroupStoreToFirebase(profile?: FirebaseUserProfile) {
   );
 }
 
-function migrateToFirebaseUser(profile: FirebaseUserProfile) {
+function migrateToFirebaseUser(profile: FirebaseUserProfile, accountUserId: string) {
   setState((current) => {
     const previousUserId = current.currentUser.id;
+    const primaryWalletAddress = profile.primaryWalletAddress ?? current.currentUser.primaryWalletAddress;
     const nextUser: User = {
       ...current.currentUser,
       ...profile,
-      id: profile.id,
-      primaryWalletAddress: profile.primaryWalletAddress ?? current.currentUser.primaryWalletAddress,
+      id: accountUserId,
+      authUserId: profile.id,
+      primaryWalletAddress,
       settings: {
         ...current.currentUser.settings,
         ...profile.settings
       }
     };
 
-    if (previousUserId === profile.id) {
+    if (previousUserId === accountUserId) {
       return {
         ...current,
         currentUser: nextUser,
         wallet: {
           ...current.wallet,
-          userId: profile.id,
+          userId: accountUserId,
           address: nextUser.primaryWalletAddress ?? current.wallet.address
         },
-        activeGroupId: profile.activeGroupId ?? current.activeGroupId
+        activeGroupId: profile.activeGroupId && current.groups.some((group) => group.id === profile.activeGroupId) ? profile.activeGroupId : current.activeGroupId
       };
     }
 
@@ -310,30 +315,19 @@ function migrateToFirebaseUser(profile: FirebaseUserProfile) {
       currentUser: nextUser,
       wallet: {
         ...current.wallet,
-        userId: profile.id,
+        userId: accountUserId,
         address: nextUser.primaryWalletAddress ?? current.wallet.address
       },
-      activeGroupId: profile.activeGroupId ?? current.activeGroupId,
-      groups: current.groups.map((group) => ({
-        ...group,
-        ownerUserId: group.ownerUserId === previousUserId ? profile.id : group.ownerUserId
-      })),
-      members: current.members.map((member) => ({
-        ...member,
-        userId: member.userId === previousUserId ? profile.id : member.userId
-      })),
-      expenses: current.expenses.map((expense) => ({
-        ...expense,
-        createdBy: expense.createdBy === previousUserId ? profile.id : expense.createdBy
-      })),
-      payments: current.payments.map((payment) => ({
-        ...payment,
-        createdByUserId: payment.createdByUserId === previousUserId ? profile.id : payment.createdByUserId
-      })),
-      activities: current.activities.map((activity) => ({
-        ...activity,
-        actorUserId: activity.actorUserId === previousUserId ? profile.id : activity.actorUserId
-      }))
+      activeGroupId: "",
+      groups: [],
+      members: [],
+      expenses: [],
+      payments: [],
+      treasuries: [],
+      treasuryTransactions: [],
+      activities: [],
+      balanceSnapshots: {},
+      inviteCodes: {}
     };
   });
 }
@@ -489,7 +483,10 @@ async function seedCurrentStateToFirestore(userId: string) {
         id: code,
         code,
         groupId,
+        groupName: snapshot.groups.find((group) => group.id === groupId)?.name,
+        groupType: snapshot.groups.find((group) => group.id === groupId)?.type,
         createdByUserId: snapshot.groups.find((group) => group.id === groupId)?.ownerUserId,
+        createdByAuthUserId: snapshot.groups.find((group) => group.id === groupId)?.ownerAuthUserId,
         status: "active",
         createdAt: Date.now(),
         updatedAt: Date.now()
@@ -509,7 +506,7 @@ async function seedCurrentStateToFirestore(userId: string) {
 }
 
 function syncRemoteBalanceSnapshot(groupId: string) {
-  if (!remoteUserId) {
+  if (!remoteUserId || !state.groups.some((group) => group.id === groupId)) {
     return;
   }
 
@@ -527,6 +524,24 @@ function runRemote(task: () => Promise<unknown>) {
   }
 
   void task().catch(setRemoteError);
+}
+
+function runRemoteForGroup(groupId: string, task: () => Promise<unknown>) {
+  if (!remoteUserId || !state.groups.some((group) => group.id === groupId)) {
+    return;
+  }
+
+  void task().catch(setRemoteError);
+}
+
+function setRemoteActiveGroup(groupId: string) {
+  const authUserId = remoteAuthUserId ?? state.currentUser.authUserId;
+
+  if (!authUserId) {
+    return Promise.resolve();
+  }
+
+  return setUserActiveGroup(authUserId, groupId);
 }
 
 function setRemoteError(error: unknown) {
@@ -567,6 +582,31 @@ function makeInviteCodeForGroup(groupName: string, now: number) {
   return `${prefix}-${now.toString(36).slice(-4).toUpperCase()}`;
 }
 
+function getProfileAccountUserId(profile: FirebaseUserProfile) {
+  return profile.primaryWalletAddress ? getWalletAccountUserId(profile.primaryWalletAddress) : profile.id;
+}
+
+function getWalletAccountUserId(address: string) {
+  return `wallet_${address.trim().toLowerCase().replace(/^0x/, "")}`;
+}
+
+function getInviteGroupPlaceholder(invite: InviteRecord, now = Date.now()): Group {
+  return {
+    id: invite.groupId,
+    name: invite.groupName ?? "Invited group",
+    type: invite.groupType ?? "other",
+    ownerUserId: invite.createdByUserId ?? "",
+    ownerAuthUserId: invite.createdByAuthUserId,
+    defaultCurrency: "VND",
+    settlementCurrency: "USDC",
+    chain: "arc",
+    treasuryEnabled: false,
+    status: "active",
+    createdAt: invite.createdAt ?? now,
+    updatedAt: invite.updatedAt ?? now
+  };
+}
+
 function createC1KDemoSeed(current: ArcNestState, now: number): Pick<
   ArcNestState,
   "activeGroupId" | "groups" | "members" | "expenses" | "payments" | "treasuries" | "activities" | "inviteCodes"
@@ -600,6 +640,7 @@ function createC1KDemoSeed(current: ArcNestState, now: number): Pick<
     {
       ...demoGroup,
       ownerUserId: current.currentUser.id,
+      ownerAuthUserId: current.currentUser.authUserId,
       updatedAt: now
     }
   ];
@@ -608,6 +649,7 @@ function createC1KDemoSeed(current: ArcNestState, now: number): Pick<
       ? {
           ...member,
           userId: current.currentUser.id,
+          authUserId: current.currentUser.authUserId,
           walletAddress: demoWalletAddress,
           updatedAt: now
         }
@@ -735,7 +777,10 @@ const actions = {
             id: code,
             code,
             groupId,
+            groupName: demo.groups.find((group) => group.id === groupId)?.name,
+            groupType: demo.groups.find((group) => group.id === groupId)?.type,
             createdByUserId: state.currentUser.id,
+            createdByAuthUserId: state.currentUser.authUserId,
             status: "active",
             createdAt: now,
             updatedAt: now
@@ -749,8 +794,10 @@ const actions = {
           )
         )
       ]);
-      await setUserActiveGroup(state.currentUser.id, demo.activeGroupId);
-      await markUserSeededFromLocal(state.currentUser.id);
+      await setRemoteActiveGroup(demo.activeGroupId);
+      if (remoteAuthUserId) {
+        await markUserSeededFromLocal(remoteAuthUserId);
+      }
     });
 
     return { ok: true, groupId: demo.activeGroupId };
@@ -762,7 +809,7 @@ const actions = {
     }
 
     setState((current) => ({ ...current, activeGroupId: groupId }));
-    runRemote(() => setUserActiveGroup(state.currentUser.id, groupId));
+    runRemote(() => setRemoteActiveGroup(groupId));
     return { ok: true, groupId };
   },
 
@@ -773,16 +820,49 @@ const actions = {
       return { ok: false, message: "Wallet address is empty." };
     }
 
+    const accountUserId = getWalletAccountUserId(normalizedAddress);
+
     setState((current) => ({
       ...current,
       currentUser: {
         ...current.currentUser,
+        id: accountUserId,
+        authUserId: remoteAuthUserId ?? current.currentUser.authUserId,
         primaryWalletAddress: normalizedAddress,
         updatedAt: Date.now()
       },
       wallet: {
         ...current.wallet,
+        userId: accountUserId,
         address: normalizedAddress,
+        updatedAt: Date.now()
+      },
+      ...(current.currentUser.id === accountUserId
+        ? {}
+        : {
+            activeGroupId: "",
+            groups: [],
+            members: [],
+            expenses: [],
+            payments: [],
+            treasuries: [],
+            treasuryTransactions: [],
+            activities: [],
+            balanceSnapshots: {},
+            inviteCodes: {}
+          })
+    }));
+
+    return { ok: true };
+  },
+
+  setWalletBalance(balance: { balanceUSDC: string; balanceVND: number }): ActionResult {
+    setState((current) => ({
+      ...current,
+      wallet: {
+        ...current.wallet,
+        balanceUSDC: balance.balanceUSDC,
+        balanceVND: balance.balanceVND,
         updatedAt: Date.now()
       }
     }));
@@ -841,7 +921,7 @@ const actions = {
         inviteCode: created.inviteCode,
         activities: [activity, inviteActivity]
       });
-      await setUserActiveGroup(state.currentUser.id, created.group.id);
+      await setRemoteActiveGroup(created.group.id);
     });
 
     return { ok: true, groupId: created.group.id, inviteCode: created.inviteCode };
@@ -870,7 +950,10 @@ const actions = {
           id: existingInviteCode,
           code: existingInviteCode,
           groupId: group.id,
+          groupName: group.name,
+          groupType: group.type,
           createdByUserId: group.ownerUserId,
+          createdByAuthUserId: group.ownerAuthUserId,
           status: "active",
           createdAt: group.createdAt,
           updatedAt: now
@@ -910,7 +993,10 @@ const actions = {
         id: inviteCode,
         code: inviteCode,
         groupId: group.id,
+        groupName: group.name,
+        groupType: group.type,
         createdByUserId: state.currentUser.id,
+        createdByAuthUserId: state.currentUser.authUserId,
         status: "active",
         createdAt: now,
         updatedAt: now
@@ -949,7 +1035,15 @@ const actions = {
         }
 
         groupId = invite.groupId;
-        group = state.groups.find((item) => item.id === groupId && item.status === "active") ?? (await getGroupById(invite.groupId));
+        group = state.groups.find((item) => item.id === groupId && item.status === "active");
+
+        if (!group) {
+          try {
+            group = (await getGroupById(invite.groupId)) ?? getInviteGroupPlaceholder(invite);
+          } catch {
+            group = getInviteGroupPlaceholder(invite);
+          }
+        }
       }
     }
 
@@ -969,6 +1063,7 @@ const actions = {
       ...createMember({
         groupId: group.id,
         userId: state.currentUser.id,
+        authUserId: state.currentUser.authUserId,
         displayName: state.currentUser.displayName.split(" ")[0] ?? state.currentUser.displayName,
         walletAddress: state.wallet.address,
         role: "member",
@@ -1008,7 +1103,10 @@ const actions = {
         id: inviteCode,
         code: inviteCode,
         groupId: group.id,
+        groupName: group.name,
+        groupType: group.type,
         createdByUserId: group.ownerUserId,
+        createdByAuthUserId: group.ownerAuthUserId,
         status: "active",
         createdAt: now,
         updatedAt: now
@@ -1018,7 +1116,11 @@ const actions = {
       ...current,
       activeGroupId: group.id,
       members: [member, ...current.members],
-      groups: upsertById(current.groups, updateGroupTimestamp(group, now)),
+      groups: upsertById(current.groups, group),
+      inviteCodes: {
+        ...current.inviteCodes,
+        [inviteCode]: group.id
+      },
       activities: sortActivities([inviteActivity, activity, ...current.activities])
     }));
 
@@ -1027,8 +1129,7 @@ const actions = {
       await persistActivity(activity);
       await persistActivity(inviteActivity);
       await recordInviteUsed(inviteRecord, state.currentUser.id, now);
-      await persistGroup(updateGroupTimestamp(group, now));
-      await setUserActiveGroup(state.currentUser.id, group.id);
+      await setRemoteActiveGroup(group.id);
     });
 
     return { ok: true, groupId: group.id, memberId: member.id };
@@ -1315,7 +1416,7 @@ const actions = {
   },
 
   startPayment(request: PaymentRequest): ActionResult {
-    const groupId = request.groupId ?? state.activeGroupId;
+    const groupId = request.groupId || state.activeGroupId;
     const actor = getCurrentMember(state.members, groupId, state.currentUser.id);
 
     if (request.fromMemberId && actor && request.fromMemberId !== actor.id) {
@@ -1350,7 +1451,7 @@ const actions = {
     const payment = createPendingMockPayment({
       request: {
         ...request,
-        groupId
+        groupId: groupId || undefined
       },
       currentUserId: state.currentUser.id,
       members: state.members,
@@ -1377,7 +1478,7 @@ const actions = {
       activities: sortActivities([activity, ...current.activities])
     }));
 
-    runRemote(async () => {
+    runRemoteForGroup(payment.groupId, async () => {
       await persistPayment(payment);
       await persistActivity(activity);
       syncRemoteBalanceSnapshot(payment.groupId);
@@ -1416,7 +1517,7 @@ const actions = {
       activities: sortActivities([activity, ...current.activities])
     }));
 
-    runRemote(async () => {
+    runRemoteForGroup(payment.groupId, async () => {
       await persistPayment(paidPayment);
       await persistActivity(activity);
       syncRemoteBalanceSnapshot(payment.groupId);
@@ -1456,7 +1557,7 @@ const actions = {
         activities: sortActivities([pendingActivity, ...current.activities])
       }));
 
-      runRemote(async () => {
+      runRemoteForGroup(payment.groupId, async () => {
         await persistPayment(pendingPayment);
         await persistActivity(pendingActivity);
       });
@@ -1472,7 +1573,7 @@ const actions = {
             payments: current.payments.map((item) => (item.id === paymentId ? submittedPayment : item))
           }));
 
-          runRemote(() => persistPayment(submittedPayment));
+          runRemoteForGroup(submittedPayment.groupId, () => persistPayment(submittedPayment));
         }
       });
       const now = Date.now();
@@ -1500,7 +1601,7 @@ const actions = {
         activities: sortActivities([activity, ...current.activities])
       }));
 
-      runRemote(async () => {
+      runRemoteForGroup(payment.groupId, async () => {
         await persistPayment(paidPayment);
         await persistActivity(activity);
         syncRemoteBalanceSnapshot(payment.groupId);
@@ -1533,7 +1634,7 @@ const actions = {
         activities: sortActivities([activity, ...current.activities])
       }));
 
-      runRemote(async () => {
+      runRemoteForGroup(payment.groupId, async () => {
         await persistPayment(failedPayment);
         await persistActivity(activity);
         syncRemoteBalanceSnapshot(payment.groupId);
@@ -1572,7 +1673,7 @@ const actions = {
       activities: sortActivities([activity, ...current.activities])
     }));
 
-    runRemote(async () => {
+    runRemoteForGroup(payment.groupId, async () => {
       await persistPayment(failedPayment);
       await persistActivity(activity);
       syncRemoteBalanceSnapshot(payment.groupId);
@@ -1611,7 +1712,7 @@ const actions = {
       activities: sortActivities([activity, ...current.activities])
     }));
 
-    runRemote(async () => {
+    runRemoteForGroup(payment.groupId, async () => {
       await persistPayment(pendingPayment);
       await persistActivity(activity);
       syncRemoteBalanceSnapshot(payment.groupId);
@@ -1643,7 +1744,7 @@ const actions = {
       payments: current.payments.map((item) => (item.id === paymentId ? cancelledPayment : item))
     }));
 
-    runRemote(async () => {
+    runRemoteForGroup(payment.groupId, async () => {
       await persistPayment(cancelledPayment);
       syncRemoteBalanceSnapshot(payment.groupId);
     });
