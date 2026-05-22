@@ -93,7 +93,7 @@ export function App() {
 
   useEffect(() => {
     const root = document.documentElement;
-    const systemPrefersLight = window.matchMedia("(prefers-color-scheme: light)").matches;
+    const systemPrefersLight = typeof window.matchMedia === "function" ? window.matchMedia("(prefers-color-scheme: light)").matches : false;
     root.dataset.theme = theme === "system" ? (systemPrefersLight ? "light" : "arc-dark") : theme;
     root.dataset.motion = reducedMotion ? "reduced" : "full";
   }, [reducedMotion, theme]);
