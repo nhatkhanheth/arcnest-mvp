@@ -1,6 +1,6 @@
 import { lazy, Suspense } from "react";
 
-const DynamicEmbeddedWalletPanelImpl = lazy(() => import("./DynamicEmbeddedWalletPanelImpl"));
+const DynamicEmbeddedWalletPanelWithProvider = lazy(() => import("./DynamicEmbeddedWalletPanelWithProvider"));
 
 type DynamicEmbeddedWalletPanelProps = {
   onWalletReady?: () => void;
@@ -9,7 +9,7 @@ type DynamicEmbeddedWalletPanelProps = {
 export function DynamicEmbeddedWalletPanel(props: DynamicEmbeddedWalletPanelProps) {
   return (
     <Suspense fallback={<div className="surface-row rounded-[18px] p-4 text-sm text-[var(--text-secondary)]">Loading embedded wallet...</div>}>
-      <DynamicEmbeddedWalletPanelImpl {...props} />
+      <DynamicEmbeddedWalletPanelWithProvider {...props} />
     </Suspense>
   );
 }
