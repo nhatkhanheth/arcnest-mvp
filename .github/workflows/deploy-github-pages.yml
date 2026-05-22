@@ -31,21 +31,34 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Resolve Vite base path
+        run: |
+          if [ "${{ github.event.repository.name }}" = "${{ github.repository_owner }}.github.io" ]; then
+            echo "BASE_PATH=/" >> "$GITHUB_ENV"
+          else
+            echo "BASE_PATH=/${{ github.event.repository.name }}/" >> "$GITHUB_ENV"
+          fi
+
       - name: Build
         run: npm run build
         env:
-          BASE_PATH: /arcnest-mvp/
+          BASE_PATH: ${{ env.BASE_PATH }}
           VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
           VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
           VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
           VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
           VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
+          VITE_FIREBASE_MEASUREMENT_ID: ${{ vars.VITE_FIREBASE_MEASUREMENT_ID }}
           VITE_ARC_RPC_URL: ${{ vars.VITE_ARC_RPC_URL }}
           VITE_ARC_CHAIN_ID: ${{ vars.VITE_ARC_CHAIN_ID }}
           VITE_ARC_EXPLORER_URL: ${{ vars.VITE_ARC_EXPLORER_URL }}
           VITE_ARC_USDC_ADDRESS: ${{ vars.VITE_ARC_USDC_ADDRESS }}
           VITE_WALLETCONNECT_PROJECT_ID: ${{ vars.VITE_WALLETCONNECT_PROJECT_ID }}
+          VITE_DYNAMIC_ENVIRONMENT_ID: ${{ vars.VITE_DYNAMIC_ENVIRONMENT_ID }}
+
+      - name: Add SPA fallback
+        run: cp dist/index.html dist/404.html
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
