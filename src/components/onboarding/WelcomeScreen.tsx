@@ -1,7 +1,10 @@
-import { LockKeyhole, QrCode, ReceiptText, ShieldAlert, Users, Wallet } from "lucide-react";
+import { ExternalLink, LockKeyhole, QrCode, ReceiptText, ShieldAlert, Users, Wallet } from "lucide-react";
 import { useState } from "react";
+import { dynamicEnabled } from "../../lib/dynamic";
+import { getWalletRuntime, openMetaMaskDeepLink } from "../../lib/mobileWallet";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
+import { DynamicEmbeddedWalletPanel } from "../wallet/DynamicEmbeddedWalletPanel";
 import { WalletConnectPanel } from "../wallet/WalletConnectPanel";
 
 type WelcomeScreenProps = {
@@ -18,6 +21,8 @@ const features = [
 
 export function WelcomeScreen({ onContinueDemo, onComplete }: WelcomeScreenProps) {
   const [showWalletConnect, setShowWalletConnect] = useState(false);
+  const [showDynamic, setShowDynamic] = useState(false);
+  const walletRuntime = getWalletRuntime();
 
   return (
     <main className="screen-pad space-y-5">
@@ -58,6 +63,16 @@ export function WelcomeScreen({ onContinueDemo, onComplete }: WelcomeScreenProps
         <Button fullWidth size="lg" variant="secondary" icon={<Wallet size={18} />} onClick={() => setShowWalletConnect(true)}>
           Connect Test Wallet
         </Button>
+        {walletRuntime.isMobile && !walletRuntime.isInMetaMask ? (
+          <Button fullWidth size="lg" variant="secondary" icon={<ExternalLink size={18} />} onClick={() => openMetaMaskDeepLink()}>
+            Open in MetaMask
+          </Button>
+        ) : null}
+        {dynamicEnabled ? (
+          <Button fullWidth size="lg" variant="muted" icon={<Wallet size={18} />} onClick={() => setShowDynamic(true)}>
+            Embedded wallet
+          </Button>
+        ) : null}
       </div>
 
       {showWalletConnect ? (
@@ -69,9 +84,18 @@ export function WelcomeScreen({ onContinueDemo, onComplete }: WelcomeScreenProps
         </div>
       ) : null}
 
+      {showDynamic ? (
+        <div className="space-y-3">
+          <DynamicEmbeddedWalletPanel />
+          <Button fullWidth variant="muted" onClick={onComplete}>
+            Continue to ArcNest
+          </Button>
+        </div>
+      ) : null}
+
       <section className="grid gap-3">
-        <ComingSoonCard title="Create embedded wallet" detail="Coming soon. Use MetaMask, Rabby, or WalletConnect for now." />
-        <ComingSoonCard title="Import wallet" detail="Coming soon. ArcNest will not ask for seed phrases or private keys." />
+        {!dynamicEnabled ? <ComingSoonCard title="Embedded wallet" detail="Hidden until VITE_DYNAMIC_ENVIRONMENT_ID is configured." /> : null}
+        <ComingSoonCard title="Import wallet" detail="Not supported. ArcNest will not ask for seed phrases or private keys." />
         <ComingSoonCard title="App passcode" detail="Coming soon. No wallet secrets are stored in this MVP." />
       </section>
     </main>

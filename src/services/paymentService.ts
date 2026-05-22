@@ -25,6 +25,11 @@ export type USDCPaymentResult = {
   txHash: Hash;
 };
 
+type ExecuteUSDCPaymentOptions = {
+  now?: number;
+  onSubmitted?: (txHash: Hash) => void | Promise<void>;
+};
+
 export function validatePaymentRequest(request: PaymentRequest): PaymentValidationResult {
   return validateUSDCTransferFields({
     amountUSDC: request.amountUSDC,
@@ -59,7 +64,7 @@ export function createPendingMockPayment({
     amountUSDC: request.amountUSDC,
     amountVND: request.amountVND,
     chain: "arc",
-    status: "pending",
+    status: "unpaid",
     paymentType: request.balanceId || request.id.startsWith("balance_") ? "balance_payment" : "qr_payment",
     note: request.note,
     createdByUserId: currentUserId,
@@ -87,21 +92,36 @@ export function markPaymentPaid(payment: Payment, now: number, txHash = generate
   };
 }
 
-export async function executeUSDCPayment(payment: Payment, now = Date.now()): Promise<USDCPaymentResult> {
+export function markPaymentPending(payment: Payment, now: number, txHash?: Hash): Payment {
+  return {
+    ...payment,
+    txHash: txHash ?? payment.txHash,
+    status: "pending",
+    updatedAt: now,
+    failedAt: undefined,
+    confirmedAt: undefined
+  };
+}
+
+export async function executeUSDCPayment(payment: Payment, options: ExecuteUSDCPaymentOptions = {}): Promise<USDCPaymentResult> {
+  const now = options.now ?? Date.now();
   const validation = validateUSDCTransferFields(payment);
 
   if (!validation.valid) {
     throw new Error(validation.message);
   }
 
-  if (payment.status !== "pending") {
-    throw new Error("Only pending payments can be confirmed.");
+  if (payment.status !== "pending" && payment.status !== "unpaid") {
+    throw new Error("Only unpaid or pending payments can be confirmed.");
   }
 
   if (getArcPaymentMode() === "mock") {
+    const mockTxHash = generateMockTxHash(payment.id, now) as Hash;
+    await options.onSubmitted?.(mockTxHash);
+
     return {
       mode: "mock",
-      txHash: generateMockTxHash(payment.id, now) as Hash
+      txHash: mockTxHash
     };
   }
 
@@ -133,6 +153,8 @@ export async function executeUSDCPayment(payment: Payment, now = Date.now()): Pr
     args: [validation.toWalletAddress, validation.amountUnits],
     chainId
   });
+
+  await options.onSubmitted?.(txHash);
 
   await waitForTransactionReceipt(wagmiConfig, {
     hash: txHash,
@@ -182,7 +204,7 @@ export function retryPayment(payment: Payment, now: number): Payment {
   return {
     ...payment,
     txHash: undefined,
-    status: "pending",
+    status: "unpaid",
     updatedAt: now,
     failedAt: undefined,
     confirmedAt: undefined

@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { ClipboardPaste, Copy, QrCode, ScanLine, UserPlus } from "lucide-react";
+import QRCode from "qrcode";
+import { ClipboardPaste, Copy, Download, ImageDown, Link2, QrCode, ScanLine, Share2, UserPlus } from "lucide-react";
 import type { ArcNestInviteQRPayload, ArcNestPaymentQRPayload, ArcNestQRPayload, PaymentRequest } from "../../models";
-import { createInviteQRPayload, createPaymentQRPayload, parseQRPayload, stringifyQRPayload } from "../../lib/qr";
+import { createInviteQRPayload, createPaymentQRPayload, createQRPayloadUri, parseQRPayload, stringifyQRPayload } from "../../lib/qr";
 import { USDC_VND_RATE } from "../../services/balanceService";
+import { getInviteUrl } from "../../services/inviteService";
 import { Button } from "../ui/Button";
-import { TextArea } from "../ui/Input";
+import { Input, TextArea } from "../ui/Input";
 import { BottomSheet } from "../ui/Modal";
 import { QRGenerator } from "./QRGenerator";
 import { QRScanner } from "./QRScanner";
@@ -49,6 +51,8 @@ export function QRPaySheet({
   const [message, setMessage] = useState<string>();
   const [copied, setCopied] = useState<string>();
   const [ensuredInviteCode, setEnsuredInviteCode] = useState<string>();
+  const [qrAmountUSDC, setQRAmountUSDC] = useState("12.50");
+  const [qrNote, setQRNote] = useState("");
 
   const paymentRequest = useMemo<PaymentRequest>(
     () => ({
@@ -58,11 +62,11 @@ export function QRPaySheet({
       toName: "You",
       toWalletAddress: primaryWalletAddress ?? "",
       fromWalletAddress: primaryWalletAddress ?? "",
-      amountUSDC: "12.50",
-      amountVND: Math.round(12.5 * USDC_VND_RATE),
-      note: activeGroupName ? `${activeGroupName} payment` : "ArcNest QR Pay"
+      amountUSDC: qrAmountUSDC,
+      amountVND: Math.round(Number(qrAmountUSDC || 0) * USDC_VND_RATE),
+      note: qrNote.trim() || (activeGroupName ? `${activeGroupName} payment` : "ArcNest QR Pay")
     }),
-    [activeGroupId, activeGroupName, primaryWalletAddress]
+    [activeGroupId, activeGroupName, primaryWalletAddress, qrAmountUSDC, qrNote]
   );
   const paymentPayload = useMemo<ArcNestPaymentQRPayload>(
     () =>
@@ -76,6 +80,7 @@ export function QRPaySheet({
     [activeGroupId, paymentRequest]
   );
   const activeInviteCode = inviteCode ?? ensuredInviteCode;
+  const inviteLink = activeInviteCode ? getInviteUrl(activeInviteCode) : undefined;
   const invitePayload = useMemo<ArcNestInviteQRPayload | undefined>(
     () =>
       activeInviteCode
@@ -86,6 +91,8 @@ export function QRPaySheet({
         : undefined,
     [activeGroupId, activeInviteCode]
   );
+  const paymentQRValue = useMemo(() => createQRPayloadUri(paymentPayload), [paymentPayload]);
+  const inviteQRValue = invitePayload ? inviteLink ?? createQRPayloadUri(invitePayload) : undefined;
 
   useEffect(() => {
     if (open) {
@@ -132,9 +139,62 @@ export function QRPaySheet({
     setActive("payload");
   }
 
-  function copyPayload(payload: ArcNestQRPayload, key: string) {
-    void navigator.clipboard?.writeText(stringifyQRPayload(payload));
-    setCopied(key);
+  async function copyText(value: string, key: string, success = "Copied.") {
+    try {
+      await navigator.clipboard?.writeText(value);
+      setCopied(key);
+      setMessage(success);
+    } catch {
+      setMessage("Copy is not available in this browser.");
+    }
+  }
+
+  async function downloadQR(value: string, fileName: string) {
+    try {
+      const dataUrl = await createQRDataUrl(value);
+      const anchor = document.createElement("a");
+      anchor.href = dataUrl;
+      anchor.download = fileName;
+      anchor.click();
+      setMessage("QR image downloaded.");
+    } catch {
+      setMessage("QR image could not be downloaded.");
+    }
+  }
+
+  async function copyQRImage(value: string) {
+    try {
+      if (!("ClipboardItem" in window) || !navigator.clipboard?.write) {
+        setMessage("QR image copy is not supported in this browser.");
+        return;
+      }
+
+      const dataUrl = await createQRDataUrl(value);
+      const blob = await (await fetch(dataUrl)).blob();
+      await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+      setCopied("image");
+      setMessage("QR image copied.");
+    } catch {
+      setMessage("QR image copy failed. Use download instead.");
+    }
+  }
+
+  async function shareQR({ title, text, url }: { title: string; text: string; url?: string }) {
+    try {
+      if (!navigator.share) {
+        await copyText(url ?? text, "share", "Share text copied.");
+        return;
+      }
+
+      await navigator.share({ title, text, url });
+      setMessage("Share sheet opened.");
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
+
+      setMessage("Share failed. Copy the payload or link instead.");
+    }
   }
 
   return (
@@ -156,11 +216,14 @@ export function QRPaySheet({
             </button>
           ))}
         </div>
+        {message && active !== "payload" ? (
+          <div className="surface-row rounded-[18px] p-3 text-sm text-[var(--text-secondary)]">{message}</div>
+        ) : null}
         {active === "scan" ? (
           <>
-            <QRScanner onMockScan={() => useRawPayload(stringifyQRPayload(paymentPayload))} />
+            <QRScanner />
             <div className="surface-row rounded-[18px] p-4 text-sm text-[var(--text-secondary)]">
-              Camera scanning is not wired in this demo. Paste a JSON QR payload, or use the scan preview above.
+              Camera scan coming soon. Paste an ArcNest QR payload or invite link to load the payment or group invite.
             </div>
             <Button fullWidth variant="secondary" icon={<ClipboardPaste size={18} />} onClick={() => setActive("payload")}>
               Paste QR payload
@@ -168,20 +231,47 @@ export function QRPaySheet({
           </>
         ) : null}
         {active === "myqr" ? (
-          <GeneratedPayload
-            payload={paymentPayload}
-            label="Payment QR"
-            copied={copied === "payment"}
-            onCopy={() => copyPayload(paymentPayload, "payment")}
-            onLoad={() => loadPayload(paymentPayload)}
-          />
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <Input label="Amount USDC" inputMode="decimal" value={qrAmountUSDC} onChange={(event) => setQRAmountUSDC(event.target.value)} />
+              <Input label="Note" value={qrNote} placeholder={activeGroupName ?? "ArcNest"} onChange={(event) => setQRNote(event.target.value)} />
+            </div>
+            <GeneratedPayload
+              payload={paymentPayload}
+              qrValue={paymentQRValue}
+              label="Payment QR"
+              copied={copied === "payment"}
+              onCopy={() => void copyText(stringifyQRPayload(paymentPayload), "payment", "Payment payload copied.")}
+              onCopyImage={() => void copyQRImage(paymentQRValue)}
+              onDownload={() => void downloadQR(paymentQRValue, `arcnest-payment-${paymentPayload.paymentId}.png`)}
+              onShare={() =>
+                void shareQR({
+                  title: "ArcNest payment",
+                  text: stringifyQRPayload(paymentPayload)
+                })
+              }
+              onLoad={() => loadPayload(paymentPayload)}
+            />
+          </div>
         ) : null}
-        {active === "invite" && invitePayload ? (
+        {active === "invite" && invitePayload && inviteQRValue ? (
           <GeneratedPayload
             payload={invitePayload}
+            qrValue={inviteQRValue}
             label={`${activeGroupName ?? "Group"} invite QR`}
             copied={copied === "invite"}
-            onCopy={() => copyPayload(invitePayload, "invite")}
+            inviteLink={inviteLink}
+            onCopy={() => void copyText(stringifyQRPayload(invitePayload), "invite", "Invite payload copied.")}
+            onCopyLink={inviteLink ? () => void copyText(inviteLink, "invite-link", "Invite link copied.") : undefined}
+            onCopyImage={() => void copyQRImage(inviteQRValue)}
+            onDownload={() => void downloadQR(inviteQRValue, `arcnest-invite-${activeInviteCode ?? "group"}.png`)}
+            onShare={() =>
+              void shareQR({
+                title: "Join my ArcNest group",
+                text: `Join ${activeGroupName ?? "my group"} on ArcNest`,
+                url: inviteLink
+              })
+            }
             onLoad={() => loadPayload(invitePayload)}
           />
         ) : null}
@@ -207,23 +297,55 @@ export function QRPaySheet({
 
 function GeneratedPayload({
   payload,
+  qrValue,
   label,
   copied,
+  inviteLink,
   onCopy,
+  onCopyLink,
+  onCopyImage,
+  onDownload,
+  onShare,
   onLoad
 }: {
   payload: ArcNestQRPayload;
+  qrValue: string;
   label: string;
   copied?: boolean;
+  inviteLink?: string;
   onCopy: () => void;
+  onCopyLink?: () => void;
+  onCopyImage: () => void;
+  onDownload: () => void;
+  onShare: () => void;
   onLoad: () => void;
 }) {
   return (
     <div className="space-y-4">
-      <QRGenerator payload={payload} label={label} />
+      <QRGenerator value={qrValue} label={label} />
+      {inviteLink ? (
+        <div className="surface-row rounded-[18px] p-3">
+          <p className="text-xs font-semibold text-[var(--text-muted)]">Invite link</p>
+          <p className="number mt-1 truncate text-sm">{inviteLink}</p>
+        </div>
+      ) : null}
       <div className="grid grid-cols-2 gap-3">
         <Button variant="secondary" icon={<Copy size={18} />} onClick={onCopy}>
-          {copied ? "Copied" : "Copy"}
+          {copied ? "Copied" : "Copy payload"}
+        </Button>
+        {onCopyLink ? (
+          <Button variant="secondary" icon={<Link2 size={18} />} onClick={onCopyLink}>
+            Copy link
+          </Button>
+        ) : null}
+        <Button variant="muted" icon={<ImageDown size={18} />} onClick={onCopyImage}>
+          Copy image
+        </Button>
+        <Button variant="muted" icon={<Download size={18} />} onClick={onDownload}>
+          Download
+        </Button>
+        <Button variant="muted" icon={<Share2 size={18} />} onClick={onShare}>
+          Share
         </Button>
         <Button variant="muted" icon={<ClipboardPaste size={18} />} onClick={onLoad}>
           Paste view
@@ -268,10 +390,10 @@ function PayloadInput({
       ) : null}
       <div className="grid grid-cols-2 gap-3">
         <Button variant="secondary" onClick={onLoadPayment}>
-          Payment demo
+          Load payment
         </Button>
         <Button variant="secondary" onClick={onLoadInvite} disabled={!invitePayload}>
-          Invite demo
+          Load invite
         </Button>
       </div>
       <Button fullWidth icon={<ClipboardPaste size={18} />} onClick={onUse}>
@@ -279,4 +401,16 @@ function PayloadInput({
       </Button>
     </div>
   );
+}
+
+function createQRDataUrl(value: string) {
+  return QRCode.toDataURL(value, {
+    errorCorrectionLevel: "M",
+    margin: 2,
+    scale: 8,
+    color: {
+      dark: "#080810",
+      light: "#f7f4ea"
+    }
+  });
 }

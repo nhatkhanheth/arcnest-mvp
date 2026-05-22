@@ -46,6 +46,7 @@ export type GroupMember = {
   role: MemberRole;
   permissions: MemberPermissions;
   status: "active" | "invited" | "removed" | "left";
+  inviteCode?: string;
   joinedAt?: number;
   invitedAt?: number;
   removedAt?: number;

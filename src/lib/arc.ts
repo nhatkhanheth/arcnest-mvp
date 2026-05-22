@@ -2,26 +2,26 @@ import { createConfig, http, injected } from "wagmi";
 import { walletConnect } from "wagmi/connectors";
 import { defineChain, isAddress, type Address } from "viem";
 
-const fallbackLocalChainId = 31337;
+export const ARC_TESTNET_CHAIN_ID = 5042002;
+
 const fallbackLocalRpcUrl = "http://127.0.0.1:8545";
+const defaultArcExplorerUrl = "https://testnet.arcscan.app";
 
 const arcRpcUrl = readEnv("VITE_ARC_RPC_URL");
-const arcChainId = parseChainId(readEnv("VITE_ARC_CHAIN_ID"));
-const arcExplorerUrl = stripTrailingSlash(readEnv("VITE_ARC_EXPLORER_URL"));
+const arcChainId = parseChainId(readEnv("VITE_ARC_CHAIN_ID")) ?? ARC_TESTNET_CHAIN_ID;
+const arcExplorerUrl = stripTrailingSlash(readEnv("VITE_ARC_EXPLORER_URL") || defaultArcExplorerUrl);
 const rawUsdcAddress = readEnv("VITE_ARC_USDC_ADDRESS");
 const arcUsdcAddress = rawUsdcAddress && isAddress(rawUsdcAddress) ? (rawUsdcAddress as Address) : undefined;
 const walletConnectProjectId = readEnv("VITE_WALLETCONNECT_PROJECT_ID");
 
 const missingPaymentEnvVars = [
   arcRpcUrl ? undefined : "VITE_ARC_RPC_URL",
-  arcChainId ? undefined : "VITE_ARC_CHAIN_ID",
-  arcExplorerUrl ? undefined : "VITE_ARC_EXPLORER_URL",
   arcUsdcAddress ? undefined : "VITE_ARC_USDC_ADDRESS"
 ].filter(Boolean) as string[];
 
 export const arcNetwork = {
   chain: "arc" as const,
-  name: "Arc",
+  name: "Arc Testnet",
   chainId: arcChainId,
   rpcUrl: arcRpcUrl,
   explorerUrl: arcExplorerUrl,
@@ -33,12 +33,12 @@ export const arcNetwork = {
 };
 
 export const arcChain = defineChain({
-  id: arcNetwork.chainId ?? fallbackLocalChainId,
-  name: "Arc",
+  id: arcNetwork.chainId,
+  name: "Arc Testnet",
   nativeCurrency: {
     decimals: 18,
-    name: "Arc ETH",
-    symbol: "ETH"
+    name: "USDC",
+    symbol: "USDC"
   },
   rpcUrls: {
     default: {
@@ -48,7 +48,7 @@ export const arcChain = defineChain({
   blockExplorers: arcNetwork.explorerUrl
     ? {
         default: {
-          name: "Arc Explorer",
+          name: "Arcscan",
           url: arcNetwork.explorerUrl
         }
       }
@@ -91,7 +91,7 @@ export function isWrongArcNetwork(chainId?: number) {
 }
 
 export function formatArcChain() {
-  return arcNetwork.chainId ? `Arc testnet (${arcNetwork.chainId})` : "Arc config missing";
+  return `Arc Testnet (${arcNetwork.chainId})`;
 }
 
 export function getArcExplorerTxUrl(txHash: string) {
@@ -128,11 +128,64 @@ export function getFriendlyWalletError(error: unknown) {
 export function getArcEnvReport() {
   return [
     { key: "VITE_ARC_RPC_URL", present: Boolean(arcRpcUrl) },
-    { key: "VITE_ARC_CHAIN_ID", present: Boolean(arcChainId) },
+    { key: "VITE_ARC_CHAIN_ID", present: true, optional: true },
     { key: "VITE_ARC_EXPLORER_URL", present: Boolean(arcExplorerUrl) },
     { key: "VITE_ARC_USDC_ADDRESS", present: Boolean(arcUsdcAddress) },
     { key: "VITE_WALLETCONNECT_PROJECT_ID", present: Boolean(walletConnectProjectId), optional: true }
   ];
+}
+
+export function getArcAddEthereumChainParams() {
+  return {
+    chainId: toHexChainId(arcNetwork.chainId),
+    chainName: "Arc Testnet",
+    nativeCurrency: {
+      name: "USDC",
+      symbol: "USDC",
+      decimals: 18
+    },
+    rpcUrls: arcNetwork.rpcUrl ? [arcNetwork.rpcUrl] : [],
+    blockExplorerUrls: arcNetwork.explorerUrl ? [arcNetwork.explorerUrl] : []
+  };
+}
+
+export async function requestAddArcTestnet() {
+  const provider = getInjectedProvider();
+
+  if (!provider) {
+    throw new Error("No browser wallet was found. Open ArcNest in MetaMask, Rabby, or another EVM wallet.");
+  }
+
+  if (!arcNetwork.rpcUrl) {
+    throw new Error("Arc RPC URL is missing. Configure VITE_ARC_RPC_URL before adding Arc Testnet.");
+  }
+
+  await provider.request({
+    method: "wallet_addEthereumChain",
+    params: [getArcAddEthereumChainParams()]
+  });
+}
+
+export async function requestSwitchArcTestnet() {
+  const provider = getInjectedProvider();
+
+  if (!provider) {
+    throw new Error("No browser wallet was found. Open ArcNest in MetaMask, Rabby, or another EVM wallet.");
+  }
+
+  try {
+    await provider.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: toHexChainId(arcNetwork.chainId) }]
+    });
+  } catch (error) {
+    if (isUnknownChainError(error)) {
+      await requestAddArcTestnet();
+      return;
+    }
+
+    throw error;
+  }
 }
 
 function readEnv(key: string) {
@@ -154,6 +207,30 @@ function stripTrailingSlash(value: string) {
   return value.replace(/\/+$/, "");
 }
 
+function toHexChainId(chainId: number) {
+  return `0x${chainId.toString(16)}`;
+}
+
+function getInjectedProvider(): Eip1193Provider | undefined {
+  if (typeof window === "undefined") {
+    return undefined;
+  }
+
+  return (window as Window & { ethereum?: Eip1193Provider }).ethereum;
+}
+
+function isUnknownChainError(error: unknown) {
+  if (!isRecord(error)) {
+    return false;
+  }
+
+  return error.code === 4902 || error.code === -32603 || String(error.message ?? "").toLowerCase().includes("unrecognized chain");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) {
     return error.message;
@@ -161,3 +238,9 @@ function getErrorMessage(error: unknown) {
 
   return typeof error === "string" ? error : "";
 }
+
+type Eip1193Provider = {
+  isMetaMask?: boolean;
+  isRabby?: boolean;
+  request: (request: { method: string; params?: unknown[] | Record<string, unknown> }) => Promise<unknown>;
+};

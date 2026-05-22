@@ -4,6 +4,7 @@ import {
   ChevronRight,
   Copy,
   Database,
+  Download,
   Eye,
   EyeOff,
   Info,
@@ -17,7 +18,7 @@ import {
   Trash2,
   WalletCards
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { DisplayCurrency, LanguageCode, LocalWallet, SettingsSplitMode, ThemeMode, Wallet as WalletModel } from "../../models";
 import { convertUSDCToDisplayAmount, formatUSDC, formatVND, shortAddress } from "../../lib/format";
 import { useGroupStore } from "../../state/useGroupStore";
@@ -62,6 +63,32 @@ export function SettingsSheet({ open, wallet, onClose, onResetOnboarding }: Sett
   const walletAddress = settings.showWalletAddress ? shortAddress(activeWallet.address) : "Hidden";
   const displayBalance = convertUSDCToDisplayAmount(wallet.balanceUSDC, settings.displayCurrency);
   const [devMessage, setDevMessage] = useState<string>();
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent>();
+  const [installMessage, setInstallMessage] = useState<string>();
+  const standalone = isStandaloneDisplay();
+
+  useEffect(() => {
+    function handleBeforeInstallPrompt(event: Event) {
+      event.preventDefault();
+      setInstallPrompt(event as BeforeInstallPromptEvent);
+    }
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+
+    return () => window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+  }, []);
+
+  async function installApp() {
+    if (!installPrompt) {
+      setInstallMessage(standalone ? "ArcNest is already installed." : "Use your browser Add to Home Screen action on iPhone or iPad.");
+      return;
+    }
+
+    await installPrompt.prompt();
+    const choice = await installPrompt.userChoice;
+    setInstallPrompt(undefined);
+    setInstallMessage(choice.outcome === "accepted" ? "Install accepted." : "Install dismissed.");
+  }
 
   return (
     <BottomSheet open={open} title="Settings" subtitle="Preferences sync when Firebase env is configured" onClose={onClose} fullHeight>
@@ -136,6 +163,20 @@ export function SettingsSheet({ open, wallet, onClose, onResetOnboarding }: Sett
           </div>
           <ToggleRow label="Sound" enabled={settings.soundEnabled} onToggle={() => settings.toggle("soundEnabled")} />
           <ToggleRow label="Reduced motion" enabled={settings.reducedMotion} onToggle={() => settings.toggle("reducedMotion")} />
+        </SettingsSection>
+
+        <SettingsSection icon={<Download size={18} />} title="Install App">
+          <Button fullWidth variant="muted" icon={<Download size={16} />} onClick={() => void installApp()} disabled={standalone && !installPrompt}>
+            {standalone ? "Installed" : "Install ArcNest"}
+          </Button>
+          <div className="surface-row rounded-[18px] p-4 text-sm text-[var(--text-secondary)]">
+            ArcNest is PWA-ready with standalone display, safe area support, and install metadata.
+          </div>
+          {installMessage ? (
+            <div className="rounded-[18px] border border-[var(--arc-accent)]/40 bg-[var(--arc-soft)] p-4 text-sm text-[var(--text-secondary)]">
+              {installMessage}
+            </div>
+          ) : null}
         </SettingsSection>
 
         <SettingsSection icon={<ShieldCheck size={18} />} title="Privacy & Security">
@@ -335,3 +376,17 @@ function ToggleRow({ label, enabled, onToggle, icon }: { label: string; enabled:
 function copyAddress(address: string) {
   void navigator.clipboard?.writeText(address);
 }
+
+function isStandaloneDisplay() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  const navigatorWithStandalone = window.navigator as Navigator & { standalone?: boolean };
+  return window.matchMedia("(display-mode: standalone)").matches || Boolean(navigatorWithStandalone.standalone);
+}
+
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+};

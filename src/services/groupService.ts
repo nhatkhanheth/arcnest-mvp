@@ -256,6 +256,7 @@ export async function persistMember(member: GroupMember) {
         role: member.role,
         permissions: member.permissions,
         status: member.status,
+        inviteCode: member.inviteCode,
         updatedAt: member.updatedAt
       }),
       { merge: true }

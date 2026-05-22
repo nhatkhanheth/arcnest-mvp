@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { GlobalHeaderActions } from "../components/app/GlobalHeaderActions";
 import { SettingsSheet } from "../components/settings/SettingsSheet";
 import { BottomNav } from "../components/ui/BottomNav";
@@ -10,6 +10,7 @@ import { QRPaySheet } from "../components/payments/QRPaySheet";
 import type { NavTab } from "./routes";
 import type { ArcNestInviteQRPayload, ArcNestPaymentQRPayload, PaymentRequest } from "../models";
 import { getArcPaymentMode } from "../lib/arc";
+import { extractInviteCodeFromPath } from "../services/inviteService";
 import { ActivityPage } from "../pages/ActivityPage";
 import { GroupDetailPage } from "../pages/GroupDetailPage";
 import { GroupsPage } from "../pages/GroupsPage";
@@ -40,6 +41,7 @@ export function App() {
     ensureInviteForGroup,
     markPaymentFailed,
     retryPayment,
+    setPrimaryWalletAddress,
     startPayment,
     switchActiveGroup
   } = useGroupStore();
@@ -60,6 +62,7 @@ export function App() {
   const [qrMode, setQRMode] = useState<QRMode>("scan");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [onboardingComplete, setOnboardingComplete] = useState(() => getStoredOnboardingComplete());
+  const pendingInviteCode = useRef<string | undefined>(getInitialInviteCode());
 
   useEffect(() => {
     startAuthStore();
@@ -69,6 +72,24 @@ export function App() {
     connectGroupStoreToFirebase(authState.profile);
     connectSettingsStoreToFirebase(authState.profile);
   }, [authState.profile]);
+
+  useEffect(() => {
+    if (!primaryWallet.address) {
+      return;
+    }
+
+    setPrimaryWalletAddress(primaryWallet.address);
+  }, [primaryWallet.address, setPrimaryWalletAddress]);
+
+  useEffect(() => {
+    if (!onboardingComplete || !pendingInviteCode.current) {
+      return;
+    }
+
+    setJoinInitialCode(pendingInviteCode.current);
+    setJoinOpen(true);
+    pendingInviteCode.current = undefined;
+  }, [onboardingComplete]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -300,6 +321,14 @@ function setStoredOnboardingComplete(complete: boolean) {
   }
 
   window.localStorage.removeItem(onboardingStorageKey);
+}
+
+function getInitialInviteCode() {
+  if (typeof window === "undefined") {
+    return undefined;
+  }
+
+  return extractInviteCodeFromPath(window.location.pathname);
 }
 
 function getSyncLabel(authState: ReturnType<typeof useAuthStore>, groupSync: ReturnType<typeof useGroupStore>["firebaseSync"]) {

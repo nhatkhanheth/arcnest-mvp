@@ -13,7 +13,7 @@ export type ArcNestInviteQRPayload = {
   type: "arcnest_invite";
   version: 1;
   network: "arc";
-  groupId: string;
+  groupId?: string;
   inviteCode: string;
 };
 
@@ -40,7 +40,7 @@ export type CreatePaymentQRPayloadInput = {
 };
 
 export type CreateInviteQRPayloadInput = {
-  groupId: string;
+  groupId?: string;
   inviteCode: string;
 };
 
@@ -58,17 +58,21 @@ export function createPaymentQRPayload(input: CreatePaymentQRPayloadInput): ArcN
 }
 
 export function createInviteQRPayload(input: CreateInviteQRPayloadInput): ArcNestInviteQRPayload {
-  return {
+  return stripUndefined({
     type: "arcnest_invite",
     version: 1,
     network: "arc",
     groupId: input.groupId,
     inviteCode: input.inviteCode.trim().toUpperCase()
-  };
+  });
 }
 
 export function stringifyQRPayload(payload: ArcNestQRPayload) {
   return JSON.stringify(payload);
+}
+
+export function createQRPayloadUri(payload: ArcNestQRPayload) {
+  return `arcnest://payload?payload=${encodeURIComponent(stringifyQRPayload(payload))}`;
 }
 
 export function parseQRPayload(rawPayload: string): QRPayloadResult {
@@ -79,6 +83,15 @@ export function parseQRPayload(rawPayload: string): QRPayloadResult {
   }
 
   const source = extractPayloadSource(raw);
+
+  if (source?.startsWith("invite:")) {
+    return {
+      ok: true,
+      payload: createInviteQRPayload({
+        inviteCode: source.replace(/^invite:/, "")
+      })
+    };
+  }
 
   if (!source) {
     return { ok: false, message: "Invalid QR" };
@@ -130,7 +143,7 @@ export function validateQRPayload(value: unknown): QRPayloadResult {
     const groupId = getString(value.groupId);
     const inviteCode = getString(value.inviteCode);
 
-    if (!groupId || !inviteCode) {
+    if (!inviteCode) {
       return { ok: false, message: "Invalid QR" };
     }
 
@@ -147,6 +160,12 @@ export function validateQRPayload(value: unknown): QRPayloadResult {
 }
 
 function extractPayloadSource(raw: string) {
+  const inviteCode = extractInviteCodeFromUrl(raw);
+
+  if (inviteCode) {
+    return `invite:${inviteCode}`;
+  }
+
   if (!raw.startsWith("arcnest://")) {
     return raw;
   }
@@ -154,6 +173,17 @@ function extractPayloadSource(raw: string) {
   try {
     const url = new URL(raw);
     return url.searchParams.get("payload") ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function extractInviteCodeFromUrl(raw: string) {
+  try {
+    const url = new URL(raw, "https://arcnest.vercel.app");
+    const match = url.pathname.match(/^\/invite\/([^/?#]+)/i);
+
+    return match?.[1] ? decodeURIComponent(match[1]).trim().toUpperCase() : "";
   } catch {
     return "";
   }

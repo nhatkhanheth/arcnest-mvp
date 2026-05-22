@@ -1,8 +1,8 @@
-# ArcNest MVP
+# ArcNest
 
-ArcNest is a mobile-first shared expense and USDC payment MVP for public testnet testing. It supports Firebase anonymous auth with Firestore persistence, QR payment payloads, QR invite payloads, demo payment fallback, and an optional Arc testnet wallet payment path.
+ArcNest is a mobile-first shared expense and USDC payment app for Arc Testnet. It supports Firebase anonymous auth with Firestore persistence, Arc Testnet wallet connect, WalletConnect, MetaMask mobile deep links, QR payment payloads, shareable invite links, and a Demo Mode fallback when Arc payment config is missing.
 
-This repo is not production-safe or mainnet-ready yet. Use testnet only, use a new test wallet, never enter seed phrases or private keys, and do not use real funds.
+This repo is testnet-only and not mainnet-ready. Use a new test wallet, never enter seed phrases or private keys, and do not use real funds.
 
 ## Local Development
 
@@ -31,12 +31,12 @@ VITE_FIREBASE_APP_ID=
 VITE_FIREBASE_MEASUREMENT_ID=
 ```
 
-Required for Arc testnet USDC transfers. Leave blank to keep demo payment fallback:
+Required for Arc Testnet USDC transfers. `VITE_ARC_CHAIN_ID` defaults to `5042002` in code when omitted. Leave RPC or USDC address blank to keep Demo Mode:
 
 ```bash
-VITE_ARC_RPC_URL=
-VITE_ARC_CHAIN_ID=
-VITE_ARC_EXPLORER_URL=
+VITE_ARC_RPC_URL=https://rpc.testnet.arc.network
+VITE_ARC_CHAIN_ID=5042002
+VITE_ARC_EXPLORER_URL=https://testnet.arcscan.app
 VITE_ARC_USDC_ADDRESS=
 ```
 
@@ -46,20 +46,35 @@ Optional. Enables WalletConnect in addition to injected browser wallets:
 VITE_WALLETCONNECT_PROJECT_ID=
 ```
 
+Optional. Enables Dynamic email/social auth and embedded wallets when configured in the Dynamic dashboard:
+
+```bash
+VITE_DYNAMIC_ENVIRONMENT_ID=
+```
+
 ## Arc Testnet Payments
 
-ArcNest only signs an onchain payment when all required Arc variables are present at build time. Vite bakes `VITE_*` values into the deployed bundle, so update Vercel environment variables and redeploy after changing them.
+ArcNest only signs an onchain payment when required Arc variables are present at build time. Vite bakes `VITE_*` values into the deployed bundle, so update Vercel environment variables and redeploy after changing them.
 
 To test a real testnet transfer:
 
-1. Set `VITE_ARC_RPC_URL`, `VITE_ARC_CHAIN_ID`, `VITE_ARC_EXPLORER_URL`, and `VITE_ARC_USDC_ADDRESS`.
+1. Set `VITE_ARC_RPC_URL`, `VITE_ARC_EXPLORER_URL`, and `VITE_ARC_USDC_ADDRESS`.
 2. Redeploy the app.
-3. Connect a new test wallet on the same Arc testnet chain ID.
+3. Connect a new test wallet on Arc Testnet chain ID `5042002`.
 4. Make sure the payer wallet shown in the payment sheet matches the connected wallet.
-5. Fund the payer wallet with testnet native token and testnet USDC.
-6. Confirm a pending payment and approve the USDC transfer in the wallet.
+5. Fund the payer wallet with Arc Testnet USDC for gas and ERC-20 transfer balance.
+6. Confirm an unpaid payment and approve the USDC `transfer` in the wallet.
+7. The payment record moves `unpaid -> pending -> paid` or `failed`; submitted tx hashes are persisted and linked to Arcscan.
 
-ArcNest never asks for private keys or seed phrases. Wallet connection is external wallet only for this MVP.
+ArcNest never asks for private keys or seed phrases.
+
+## Wallets and Mobile
+
+- MetaMask mobile opens through `https://metamask.app.link/dapp/...`.
+- WalletConnect is enabled when `VITE_WALLETCONNECT_PROJECT_ID` exists.
+- The Wallet screen can add Arc Testnet and switch to Arc Testnet.
+- Wrong-network, missing-config, Demo Mode, and Arc Testnet states are visible in the app.
+- Dynamic embedded wallet is hidden unless `VITE_DYNAMIC_ENVIRONMENT_ID` exists.
 
 ## Firebase Setup
 
@@ -84,6 +99,12 @@ groups/{groupId}/payments/{paymentId}
 groups/{groupId}/activities/{activityId}
 groups/{groupId}/balanceSnapshots/current
 invites/{inviteCode}
+```
+
+Invite links use:
+
+```text
+https://arcnest.vercel.app/invite/{inviteCode}
 ```
 
 ## Firestore Rules Direction
@@ -133,9 +154,10 @@ Dashboard path:
 4. Build command: `npm run build`.
 5. Output directory: `dist`.
 6. Add all production `VITE_FIREBASE_*` env vars.
-7. Add `VITE_ARC_RPC_URL`, `VITE_ARC_CHAIN_ID`, `VITE_ARC_EXPLORER_URL`, and `VITE_ARC_USDC_ADDRESS` when Arc testnet payments are ready.
+7. Add `VITE_ARC_RPC_URL`, `VITE_ARC_EXPLORER_URL`, and `VITE_ARC_USDC_ADDRESS` when Arc Testnet payments are ready.
 8. Add optional `VITE_WALLETCONNECT_PROJECT_ID` if you want WalletConnect.
-9. Deploy.
+9. Add optional `VITE_DYNAMIC_ENVIRONMENT_ID` if you want Dynamic embedded wallets.
+10. Deploy.
 
 CLI path:
 
@@ -173,12 +195,14 @@ Do not use Pages source `Deploy from a branch / main / root` for this Vite app. 
 - Add an expense.
 - Confirm balances update.
 - Generate payment QR.
+- Copy/download/share payment QR.
 - Paste payment QR payload and confirm Payment Sheet opens.
 - Generate invite QR.
-- Paste invite QR payload and confirm Join Group opens with the invite code.
+- Copy/download/share invite QR and invite link.
+- Open `/invite/{inviteCode}` and confirm Join Group opens with the invite code.
 - Connect wallet, or confirm demo fallback when Arc env is missing.
-- Pay a pending balance.
-- Confirm payment becomes paid and activity updates.
+- Pay an unpaid balance.
+- Confirm payment becomes pending, then paid or failed, and activity updates.
 - Reload the app and confirm data remains.
 - Open two tabs and confirm Firebase-backed updates sync.
 - Test desktop Chrome.
@@ -187,7 +211,8 @@ Do not use Pages source `Deploy from a branch / main / root` for this Vite app. 
 
 ## Known MVP Limits
 
-- Camera QR scanning is not implemented yet; paste payload is the demo fallback.
-- Arc payments use demo mode until `VITE_ARC_RPC_URL`, `VITE_ARC_CHAIN_ID`, `VITE_ARC_EXPLORER_URL`, and `VITE_ARC_USDC_ADDRESS` are configured and the app is redeployed.
-- Embedded wallet, import wallet, backup, and passcode flows are coming soon. Do not add seed phrase or private key entry to the client.
-- This MVP is not production-safe or mainnet-ready. Add backend payment verification, audited Firestore rules, rate limiting, and abuse controls before real users.
+- Camera QR scanning is not implemented yet; paste payload/link is the fallback and the UI labels camera scan as coming soon.
+- Arc payments use Demo Mode until `VITE_ARC_RPC_URL` and `VITE_ARC_USDC_ADDRESS` are configured and the app is redeployed.
+- Dynamic embedded wallets require `VITE_DYNAMIC_ENVIRONMENT_ID` and Dynamic dashboard setup for email/social auth and wallet creation.
+- Import wallet, backup, and passcode flows are not implemented. Do not add seed phrase or private key entry to the client.
+- Add backend payment verification, Firestore rules tests, rate limiting, and abuse controls before real users.

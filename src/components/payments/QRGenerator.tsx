@@ -1,38 +1,42 @@
-import type { ArcNestQRPayload } from "../../models";
-import { stringifyQRPayload } from "../../lib/qr";
+import { useEffect, useRef, useState } from "react";
+import QRCode from "qrcode";
 
 type QRGeneratorProps = {
-  payload: ArcNestQRPayload;
+  value: string;
   label: string;
 };
 
-function makeCells(seed: string) {
-  return Array.from({ length: 256 }, (_, index) => {
-    const code = seed.charCodeAt(index % seed.length);
-    const inMarker =
-      (index < 48 && index % 16 < 3) ||
-      (index < 48 && index % 16 > 12) ||
-      (index > 207 && index % 16 < 3);
-    return inMarker || (code + index * 7) % 5 < 2;
-  });
-}
+export function QRGenerator({ value, label }: QRGeneratorProps) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [error, setError] = useState<string>();
 
-export function QRGenerator({ payload, label }: QRGeneratorProps) {
-  const content = stringifyQRPayload(payload);
-  const cells = makeCells(content);
+  useEffect(() => {
+    if (!canvasRef.current) {
+      return;
+    }
+
+    void QRCode.toCanvas(canvasRef.current, value, {
+      errorCorrectionLevel: "M",
+      margin: 2,
+      scale: 8,
+      color: {
+        dark: "#080810",
+        light: "#f7f4ea"
+      }
+    })
+      .then(() => setError(undefined))
+      .catch(() => setError("QR image could not be generated."));
+  }, [value]);
 
   return (
     <div className="space-y-4">
-      <div className="mx-auto w-full max-w-[260px] rounded-[28px] bg-[var(--text-primary)] p-5">
-        <div className="grid aspect-square grid-cols-[repeat(16,minmax(0,1fr))] gap-1">
-          {cells.map((filled, index) => (
-            <span key={index} className={filled ? "rounded-sm bg-[var(--bg-main)]" : "rounded-sm bg-transparent"} />
-          ))}
-        </div>
+      <div className="mx-auto w-full max-w-[260px] rounded-[28px] bg-[var(--text-primary)] p-4">
+        <canvas ref={canvasRef} className="block aspect-square h-auto w-full rounded-[18px]" aria-label={label} />
       </div>
       <div className="text-center">
         <p className="font-semibold">{label}</p>
-        <p className="mt-1 text-sm text-[var(--text-muted)]">Payload-ready QR preview</p>
+        <p className="mt-1 text-sm text-[var(--text-muted)]">Scannable QR payload</p>
+        {error ? <p className="mt-1 text-sm text-[var(--danger)]">{error}</p> : null}
       </div>
     </div>
   );

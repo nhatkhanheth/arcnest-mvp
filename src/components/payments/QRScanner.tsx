@@ -1,12 +1,8 @@
 import { ScanLine } from "lucide-react";
 
-type QRScannerProps = {
-  onMockScan?: () => void;
-};
-
-export function QRScanner({ onMockScan }: QRScannerProps) {
+export function QRScanner() {
   return (
-    <button type="button" className="focus-ring block w-full text-left" onClick={onMockScan}>
+    <div className="block w-full text-left">
       <div className="relative aspect-[4/5] overflow-hidden rounded-[28px] border border-[var(--border-soft)] bg-[var(--bg-card)]">
         <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 opacity-40">
           {Array.from({ length: 9 }, (_, index) => (
@@ -24,10 +20,10 @@ export function QRScanner({ onMockScan }: QRScannerProps) {
         </div>
         <div className="absolute inset-x-0 bottom-7 flex items-center justify-center gap-2 text-sm font-semibold text-[var(--text-secondary)]">
           <ScanLine size={18} />
-          Scan QR to Pay
+          Camera scan coming soon
         </div>
       </div>
-    </button>
+    </div>
   );
 }
 

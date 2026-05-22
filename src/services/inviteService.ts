@@ -28,6 +28,20 @@ export function isValidInviteCode(code: string) {
   return /^[A-Z0-9]{3,}-[A-Z0-9]{3,}$/.test(normalizeInviteCode(code));
 }
 
+export function getInviteUrl(code: string, origin = getAppOrigin()) {
+  return `${origin}/invite/${encodeURIComponent(normalizeInviteCode(code))}`;
+}
+
+export function extractInviteCodeFromPath(pathname: string) {
+  const match = pathname.match(/^\/invite\/([^/?#]+)/i);
+
+  if (!match?.[1]) {
+    return undefined;
+  }
+
+  return normalizeInviteCode(decodeURIComponent(match[1]));
+}
+
 export function getInviteResolvedStatus(invite: InviteRecord, now = Date.now()): InviteRecord["status"] {
   if (invite.status === "active" && invite.expiresAt && invite.expiresAt <= now) {
     return "expired";
@@ -67,4 +81,12 @@ export async function recordInviteUsed(invite: InviteRecord, usedByUserId?: stri
     lastUsedByUserId: usedByUserId,
     updatedAt: now
   });
+}
+
+function getAppOrigin() {
+  if (typeof window === "undefined") {
+    return "https://arcnest.vercel.app";
+  }
+
+  return window.location.origin;
 }

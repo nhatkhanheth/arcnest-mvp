@@ -1,9 +1,9 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { CheckCircle2, ExternalLink, RotateCcw, ShieldCheck, TriangleAlert } from "lucide-react";
-import { useConnection } from "wagmi";
+import { useConnection, useSwitchChain } from "wagmi";
 import type { Payment, PaymentRequest } from "../../models";
 import type { ArcPaymentMode } from "../../lib/arc";
-import { arcNetwork, getArcExplorerTxUrl, isWrongArcNetwork } from "../../lib/arc";
+import { arcNetwork, getArcExplorerTxUrl, getFriendlyWalletError, isWrongArcNetwork, requestSwitchArcTestnet } from "../../lib/arc";
 import { formatUSDC, formatVND, shortAddress } from "../../lib/format";
 import { Button } from "../ui/Button";
 import { BottomSheet } from "../ui/Modal";
@@ -37,6 +37,8 @@ export function PaymentSheet({
   onRetry
 }: PaymentSheetProps) {
   const connection = useConnection();
+  const { switchChainAsync } = useSwitchChain();
+  const [networkError, setNetworkError] = useState<string>();
   const insufficient = request ? Number(request.amountUSDC) > Number(walletBalanceUSDC) : false;
 
   if (!request || !payment) {
@@ -60,8 +62,27 @@ export function PaymentSheet({
       : missingConfig
         ? "Demo payment"
         : paymentMode === "testnet"
-          ? "Testnet payment"
+          ? "Pay on Arc Testnet"
           : "Demo payment";
+
+  async function switchNetwork() {
+    setNetworkError(undefined);
+
+    try {
+      if (connection.isConnected) {
+        await switchChainAsync({ chainId: arcNetwork.chainId });
+        return;
+      }
+
+      await requestSwitchArcTestnet();
+    } catch (error) {
+      try {
+        await requestSwitchArcTestnet();
+      } catch (fallbackError) {
+        setNetworkError(getFriendlyWalletError(fallbackError || error));
+      }
+    }
+  }
 
   return (
     <BottomSheet open={open} title={title} subtitle={subtitle} onClose={onClose}>
@@ -120,10 +141,16 @@ export function PaymentSheet({
               <Detail label="For" value={request.note ?? request.groupName ?? "ArcNest payment"} />
             </div>
             {wrongNetwork ? (
-              <div className="surface-row rounded-[18px] p-3 text-sm text-[var(--danger)]">
-                Switch your wallet to Arc testnet before confirming.
+              <div className="space-y-3">
+                <div className="surface-row rounded-[18px] p-3 text-sm text-[var(--danger)]">
+                  Switch your wallet to Arc Testnet before confirming.
+                </div>
+                <Button fullWidth variant="secondary" icon={<RotateCcw size={18} />} onClick={() => void switchNetwork()}>
+                  Switch to Arc Testnet
+                </Button>
               </div>
             ) : null}
+            {networkError ? <div className="surface-row rounded-[18px] p-3 text-sm text-[var(--danger)]">{networkError}</div> : null}
             {needsWallet ? (
               <div className="surface-row rounded-[18px] p-3 text-sm text-[var(--text-secondary)]">
                 Connect a test wallet before sending a testnet payment.
@@ -143,7 +170,8 @@ export function PaymentSheet({
               Never enter a seed phrase or private key in ArcNest. Do not use real funds.
             </div>
             {paymentError ? <div className="surface-row rounded-[18px] p-3 text-sm text-[var(--danger)]">{paymentError}</div> : null}
-            <Button fullWidth size="lg" icon={<CheckCircle2 size={18} />} onClick={() => void onConfirmPayment(payment.id)} disabled={confirming || wrongNetwork || needsWallet}>
+            {payment.txHash ? <Detail label="Submitted tx" value={shortAddress(payment.txHash)} /> : null}
+            <Button fullWidth size="lg" icon={<CheckCircle2 size={18} />} onClick={() => void onConfirmPayment(payment.id)} disabled={confirming || wrongNetwork || needsWallet || payment.status === "pending"}>
               {confirmLabel}
             </Button>
             {paymentMode === "mock" ? (

@@ -14,7 +14,7 @@ type JoinGroupSheetProps = {
 
 export function JoinGroupSheet({ open, initialCode, onClose, onOpenQR }: JoinGroupSheetProps) {
   const { joinGroupByInviteCode } = useGroupStore();
-  const [code, setCode] = useState("C1K-82KQ");
+  const [code, setCode] = useState("");
   const [message, setMessage] = useState<string>();
   const [joining, setJoining] = useState(false);
 
@@ -23,9 +23,7 @@ export function JoinGroupSheet({ open, initialCode, onClose, onOpenQR }: JoinGro
       return;
     }
 
-    if (initialCode) {
-      setCode(initialCode);
-    }
+    setCode(initialCode ?? "");
 
     setMessage(undefined);
   }, [initialCode, open]);

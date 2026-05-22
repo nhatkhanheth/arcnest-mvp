@@ -34,6 +34,24 @@ service cloud.firestore {
       return isGroupMember(groupId) && memberRole(groupId) in ['owner', 'admin', 'editor'];
     }
 
+    function invitePath(inviteCode) {
+      return /databases/$(database)/documents/invites/$(inviteCode);
+    }
+
+    function hasActiveInvite(groupId, inviteCode) {
+      return inviteCode is string
+        && exists(invitePath(inviteCode))
+        && get(invitePath(inviteCode)).data.groupId == groupId
+        && get(invitePath(inviteCode)).data.status == 'active';
+    }
+
+    function isSelfInviteJoin(groupId, userId) {
+      return isSelf(userId)
+        && request.resource.data.role == 'member'
+        && request.resource.data.status == 'active'
+        && hasActiveInvite(groupId, request.resource.data.inviteCode);
+    }
+
     function isPaymentPayer(groupId) {
       return signedIn()
         && resource.data.fromMemberId is string
@@ -75,7 +93,8 @@ service cloud.firestore {
       match /memberAccess/{userId} {
         allow read: if isSelf(userId) || canManageMembers(groupId);
         allow create: if canManageMembers(groupId)
-          || (isSelf(userId) && request.resource.data.role == 'owner');
+          || (isSelf(userId) && request.resource.data.role == 'owner')
+          || isSelfInviteJoin(groupId, userId);
         allow update: if canManageMembers(groupId);
         allow delete: if false;
       }
@@ -85,7 +104,10 @@ service cloud.firestore {
         allow create: if canManageMembers(groupId)
           || (signedIn()
             && request.resource.data.userId == request.auth.uid
-            && request.resource.data.role == 'owner');
+            && request.resource.data.role == 'owner')
+          || (signedIn()
+            && request.resource.data.userId == request.auth.uid
+            && isSelfInviteJoin(groupId, request.auth.uid));
         allow update: if canManageMembers(groupId);
         allow delete: if false;
       }

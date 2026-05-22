@@ -67,6 +67,7 @@ import {
   markPaymentCancelled,
   markPaymentFailed as markPaymentFailedModel,
   markPaymentPaid as markPaymentPaidModel,
+  markPaymentPending as markPaymentPendingModel,
   persistPayment,
   retryPayment as retryMockPayment,
   subscribeGroupPayments,
@@ -297,7 +298,8 @@ function migrateToFirebaseUser(profile: FirebaseUserProfile) {
         currentUser: nextUser,
         wallet: {
           ...current.wallet,
-          userId: profile.id
+          userId: profile.id,
+          address: nextUser.primaryWalletAddress ?? current.wallet.address
         },
         activeGroupId: profile.activeGroupId ?? current.activeGroupId
       };
@@ -308,7 +310,8 @@ function migrateToFirebaseUser(profile: FirebaseUserProfile) {
       currentUser: nextUser,
       wallet: {
         ...current.wallet,
-        userId: profile.id
+        userId: profile.id,
+        address: nextUser.primaryWalletAddress ?? current.wallet.address
       },
       activeGroupId: profile.activeGroupId ?? current.activeGroupId,
       groups: current.groups.map((group) => ({
@@ -763,6 +766,30 @@ const actions = {
     return { ok: true, groupId };
   },
 
+  setPrimaryWalletAddress(address: string): ActionResult {
+    const normalizedAddress = address.trim();
+
+    if (!normalizedAddress) {
+      return { ok: false, message: "Wallet address is empty." };
+    }
+
+    setState((current) => ({
+      ...current,
+      currentUser: {
+        ...current.currentUser,
+        primaryWalletAddress: normalizedAddress,
+        updatedAt: Date.now()
+      },
+      wallet: {
+        ...current.wallet,
+        address: normalizedAddress,
+        updatedAt: Date.now()
+      }
+    }));
+
+    return { ok: true };
+  },
+
   createGroup(draft: GroupDraft): ActionResult {
     const now = Date.now();
     const created = createGroupFromDraft(draft, state.currentUser, now);
@@ -938,14 +965,17 @@ const actions = {
     }
 
     const now = Date.now();
-    const member = createMember({
-      groupId: group.id,
-      userId: state.currentUser.id,
-      displayName: state.currentUser.displayName.split(" ")[0] ?? state.currentUser.displayName,
-      walletAddress: state.wallet.address,
-      role: "member",
-      now
-    });
+    const member: GroupMember = {
+      ...createMember({
+        groupId: group.id,
+        userId: state.currentUser.id,
+        displayName: state.currentUser.displayName.split(" ")[0] ?? state.currentUser.displayName,
+        walletAddress: state.wallet.address,
+        role: "member",
+        now
+      }),
+      inviteCode
+    };
     const activity = createActivity(
       {
         groupId: group.id,
@@ -1307,7 +1337,7 @@ const actions = {
       (payment) =>
         payment.id === request.id ||
         (payment.balanceId === requestRecordId &&
-          payment.status === "pending" &&
+          (payment.status === "unpaid" || payment.status === "pending") &&
           payment.groupId === groupId &&
           payment.fromMemberId === (request.fromMemberId ?? actor?.id))
     );
@@ -1403,7 +1433,48 @@ const actions = {
     }
 
     try {
-      const result = await executeUSDCPayment(payment);
+      const pendingAt = Date.now();
+      const pendingPayment = markPaymentPendingModel(payment, pendingAt);
+      const pendingActivity = createActivity(
+        {
+          groupId: payment.groupId,
+          actorUserId: state.currentUser.id,
+          actorMemberId: payment.fromMemberId,
+          type: "payment_started",
+          targetId: payment.id,
+          metadata: {
+            amountUSDC: payment.amountUSDC,
+            status: "pending"
+          }
+        },
+        pendingAt
+      );
+
+      setState((current) => ({
+        ...current,
+        payments: current.payments.map((item) => (item.id === paymentId ? pendingPayment : item)),
+        activities: sortActivities([pendingActivity, ...current.activities])
+      }));
+
+      runRemote(async () => {
+        await persistPayment(pendingPayment);
+        await persistActivity(pendingActivity);
+      });
+
+      const result = await executeUSDCPayment(pendingPayment, {
+        onSubmitted(txHash) {
+          const submittedAt = Date.now();
+          const latestPayment = state.payments.find((item) => item.id === paymentId) ?? pendingPayment;
+          const submittedPayment = markPaymentPendingModel(latestPayment, submittedAt, txHash);
+
+          setState((current) => ({
+            ...current,
+            payments: current.payments.map((item) => (item.id === paymentId ? submittedPayment : item))
+          }));
+
+          runRemote(() => persistPayment(submittedPayment));
+        }
+      });
       const now = Date.now();
       const latestPayment = state.payments.find((item) => item.id === paymentId) ?? payment;
       const paidPayment = markPaymentPaidModel(latestPayment, now, result.txHash);

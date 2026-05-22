@@ -9,6 +9,10 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
+          if (id.includes("node_modules/@dynamic-labs") || id.includes("node_modules/@turnkey") || id.includes("node_modules/@simplewebauthn")) {
+            return "dynamic";
+          }
+
           if (id.includes("node_modules/lucide-react") || id.includes("node_modules/lucide")) {
             return "icons";
           }

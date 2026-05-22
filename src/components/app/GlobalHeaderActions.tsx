@@ -14,7 +14,7 @@ export function GlobalHeaderActions({ syncLabel, onOpenSettings, onOpenQR }: Glo
   const paymentMode = getArcPaymentMode();
   const missingConfig = arcNetwork.missingPaymentEnvVars.length > 0;
   const wrongNetwork = paymentMode === "testnet" && connection.isConnected && isWrongArcNetwork(connection.chainId);
-  const modeLabel = wrongNetwork ? "Wrong Network" : missingConfig ? "Missing Config" : connection.isConnected ? "Testnet Mode" : "Testnet Ready";
+  const modeLabel = wrongNetwork ? "Wrong Network" : missingConfig ? "Demo Mode" : connection.isConnected ? "Arc Testnet" : "Testnet Ready";
 
   return (
     <div className="pointer-events-auto absolute right-5 top-[max(16px,env(safe-area-inset-top))] z-20 flex items-center gap-2">
