@@ -258,6 +258,7 @@ export function connectGroupStoreToFirebase(profile?: FirebaseUserProfile) {
 
   membershipsUnsubscribe = subscribeUserMemberships(
     accountUserId,
+    profile.id,
     (memberships) => {
       const activeMemberships = memberships.filter((member) => member.status === "active" || member.status === "invited");
       const groupIds = Array.from(new Set(activeMemberships.map((member) => member.groupId)));

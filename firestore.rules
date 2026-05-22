@@ -131,7 +131,8 @@ service cloud.firestore {
       }
 
       match /members/{memberId} {
-        allow read: if isGroupMember(groupId);
+        allow read: if isGroupMember(groupId)
+          || (signedIn() && resource.data.authUserId == request.auth.uid);
         allow create: if canManageMembers(groupId)
           || (signedIn()
             && request.resource.data.authUserId == request.auth.uid

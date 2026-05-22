@@ -183,14 +183,25 @@ export function subscribeActiveGroupId(userId: string, onActiveGroupId: (activeG
   );
 }
 
-export function subscribeUserMemberships(userId: string, onMemberships: (memberships: GroupMember[]) => void, onError?: FirestoreFailureHandler) {
+export function subscribeUserMemberships(
+  userId: string,
+  authUserId: string | undefined,
+  onMemberships: (memberships: GroupMember[]) => void,
+  onError?: FirestoreFailureHandler
+) {
   const database = getFirestoreOrThrow();
-  const membershipsQuery = query(collectionGroup(database, "members"), where("userId", "==", userId));
+  const membershipsQuery = authUserId
+    ? query(collectionGroup(database, "members"), where("authUserId", "==", authUserId))
+    : query(collectionGroup(database, "members"), where("userId", "==", userId));
 
   return onSnapshot(
     membershipsQuery,
     (snapshot) => {
-      onMemberships(snapshot.docs.map((memberSnapshot) => ({ id: memberSnapshot.id, ...memberSnapshot.data() }) as GroupMember));
+      onMemberships(
+        snapshot.docs
+          .map((memberSnapshot) => ({ id: memberSnapshot.id, ...memberSnapshot.data() }) as GroupMember)
+          .filter((member) => member.userId === userId)
+      );
     },
     handleFirestoreError(onError)
   );
