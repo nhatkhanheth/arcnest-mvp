@@ -92,6 +92,10 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /{path=**}/members/{memberId} {
+      allow read: if signedIn() && resource.data.authUserId == request.auth.uid;
+    }
+
     match /invites/{inviteId} {
       allow read: if signedIn();
       allow create: if signedIn()
