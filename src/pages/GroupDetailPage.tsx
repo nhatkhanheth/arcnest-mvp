@@ -119,7 +119,7 @@ export function GroupDetailPage({
       <Section title="Expenses" action={canAddExpenses ? "Add" : undefined} onAction={openCreateExpense}>
         <div className="space-y-3">
           {groupExpenses.length > 0 ? (
-            groupExpenses.slice(0, 3).map((expense) => (
+            groupExpenses.map((expense) => (
               <ExpenseCard
                 key={expense.id}
                 expense={expense}
@@ -176,7 +176,7 @@ export function GroupDetailPage({
         ) : null}
         <div className="mt-3 space-y-2">
           {visibleBalances.length > 0 ? (
-            visibleBalances.slice(0, 3).map((balance) => (
+            visibleBalances.map((balance) => (
               <div key={balance.id} className="surface-row flex items-center justify-between rounded-2xl px-4 py-3 text-sm">
                 <span className="text-[var(--text-secondary)]">
                   {memberName(balance.fromMemberId, members)} pays {memberName(balance.toMemberId, members)}

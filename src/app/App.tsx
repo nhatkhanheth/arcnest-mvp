@@ -149,6 +149,13 @@ export function App() {
     setJoinInitialCode(undefined);
   }
 
+  function openGroupDetail(groupId: string) {
+    replaceInviteUrlWithHome();
+    switchActiveGroup(groupId);
+    setSelectedGroupId(groupId);
+    setAddExpenseOpen(false);
+  }
+
   function openPayment(request: PaymentRequest) {
     const result = startPayment(request);
 
@@ -286,7 +293,14 @@ export function App() {
             onOpenQR={openQR}
           />
         ) : activeTab === "home" ? (
-          <HomePage onOpenQR={openQR} onOpenPayment={openPayment} onOpenSend={() => setSendOpen(true)} onGoHome={goHome} onGoToSplit={() => changeTab("split")} />
+          <HomePage
+            onOpenQR={openQR}
+            onOpenPayment={openPayment}
+            onOpenSend={() => setSendOpen(true)}
+            onGoHome={goHome}
+            onOpenGroup={openGroupDetail}
+            onGoToSplit={() => changeTab("split")}
+          />
         ) : activeTab === "groups" ? (
           <GroupsPage
             onOpenGroup={(groupId) => {
@@ -322,8 +336,7 @@ export function App() {
         onJoined={(groupId) => {
           replaceInviteUrlWithHome();
           if (groupId) {
-            switchActiveGroup(groupId);
-            setSelectedGroupId(groupId);
+            openGroupDetail(groupId);
           }
         }}
         onOpenQR={() => {

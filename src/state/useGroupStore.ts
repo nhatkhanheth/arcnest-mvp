@@ -1012,11 +1012,16 @@ const actions = {
     return { ok: true, groupId: group.id, inviteCode };
   },
 
-  async joinGroupByInviteCode(code: string): Promise<ActionResult> {
+  async joinGroupByInviteCode(code: string, nickname?: string): Promise<ActionResult> {
     const inviteCode = normalizeInviteCode(code);
+    const displayName = nickname?.trim();
 
     if (!isValidInviteCode(inviteCode)) {
       return { ok: false, message: "Invite code should look like C1K-82KQ." };
+    }
+
+    if (!displayName) {
+      return { ok: false, message: "Add a nickname before joining." };
     }
 
     let invite: InviteRecord | undefined;
@@ -1069,7 +1074,7 @@ const actions = {
         groupId: group.id,
         userId: state.currentUser.id,
         authUserId: state.currentUser.authUserId,
-        displayName: state.currentUser.displayName.split(" ")[0] ?? state.currentUser.displayName,
+        displayName,
         walletAddress: state.wallet.address,
         role: "member",
         now

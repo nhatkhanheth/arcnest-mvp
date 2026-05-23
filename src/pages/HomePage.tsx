@@ -14,10 +14,11 @@ type HomePageProps = {
   onOpenPayment: (request: PaymentRequest) => void;
   onOpenSend: () => void;
   onGoHome?: () => void;
+  onOpenGroup: (groupId: string) => void;
   onGoToSplit: () => void;
 };
 
-export function HomePage({ onOpenQR, onOpenPayment, onOpenSend, onGoHome, onGoToSplit }: HomePageProps) {
+export function HomePage({ onOpenQR, onOpenPayment, onOpenSend, onGoHome, onOpenGroup, onGoToSplit }: HomePageProps) {
   const { balances, currentUser, globalSummary, members, groups, treasuries, wallet } = useGroupStore();
   const { displayCurrency, primaryWallet } = useSettingsStore();
   const currentMemberIds = new Set(members.filter((member) => member.userId === currentUser.id).map((member) => member.id));
@@ -81,6 +82,7 @@ export function HomePage({ onOpenQR, onOpenPayment, onOpenSend, onGoHome, onGoTo
               walletAddress={primaryWallet.address}
               currentUserId={currentUser.id}
               displayCurrency={displayCurrency}
+              onOpenGroup={onOpenGroup}
               onOpenPayment={onOpenPayment}
             />
           ))
@@ -103,6 +105,7 @@ export function HomePage({ onOpenQR, onOpenPayment, onOpenSend, onGoHome, onGoTo
               walletAddress={primaryWallet.address}
               currentUserId={currentUser.id}
               displayCurrency={displayCurrency}
+              onOpenGroup={onOpenGroup}
               onOpenPayment={onOpenPayment}
             />
           ))
@@ -154,6 +157,7 @@ function BalanceRow({
   walletAddress,
   currentUserId,
   displayCurrency,
+  onOpenGroup,
   onOpenPayment
 }: {
   balance: Balance;
@@ -164,6 +168,7 @@ function BalanceRow({
   walletAddress: string;
   currentUserId: string;
   displayCurrency: ReturnType<typeof useSettingsStore>["displayCurrency"];
+  onOpenGroup: (groupId: string) => void;
   onOpenPayment: (request: PaymentRequest) => void;
 }) {
   const group = groups.find((item) => item.id === balance.groupId);
@@ -175,20 +180,39 @@ function BalanceRow({
   const counterpartyName = isTreasuryMemberId(balance.toMemberId) ? "Group treasury" : counterparty?.displayName ?? "Member";
   const toWalletAddress = getBalanceRecipientWallet(balance, members, treasuries);
 
+  function openGroupDetails() {
+    if (group) {
+      onOpenGroup(group.id);
+    }
+  }
+
   return (
-    <div className="surface-row flex min-h-[76px] items-center justify-between gap-3 rounded-[20px] p-4">
+    <div
+      role="button"
+      tabIndex={group ? 0 : -1}
+      className="surface-row focus-ring flex min-h-[76px] cursor-pointer items-center justify-between gap-3 rounded-[20px] p-4"
+      onClick={openGroupDetails}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openGroupDetails();
+        }
+      }}
+    >
       <div className="min-w-0">
         <p className="truncate font-semibold">{type === "pay" ? `Pay ${counterpartyName}` : `${counterparty?.displayName ?? "Member"} pays you`}</p>
         <p className="truncate text-sm text-[var(--text-muted)]">{group?.name}</p>
         <p className="mt-1 text-xs text-[var(--text-muted)]">
           {displayCurrency === "USDC" ? formatVND(balance.amountVND) : formatDisplayAmount(balance.amountVND, displayCurrency)}
         </p>
+        <p className="mt-1 text-xs font-semibold text-[var(--text-muted)]">Tap to view group expenses</p>
       </div>
       <div className="shrink-0 text-right">
         <p className="number mb-2 font-bold">{formatUSDC(balance.amountUSDC)}</p>
         {type === "pay" ? (
-          <PayButton
-            onClick={() =>
+          <span onClick={(event) => event.stopPropagation()}>
+            <PayButton
+              onClick={() =>
               onOpenPayment({
                 id: balance.id,
                 balanceId: balance.id,
@@ -203,9 +227,10 @@ function BalanceRow({
                 amountVND: balance.amountVND,
                 note: group?.name
               })
-            }
-            disabled={!payAllowed}
-          />
+              }
+              disabled={!payAllowed}
+            />
+          </span>
         ) : null}
       </div>
     </div>

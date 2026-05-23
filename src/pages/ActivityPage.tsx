@@ -3,7 +3,15 @@ import { Card } from "../components/ui/Card";
 import { useGroupStore } from "../state/useGroupStore";
 
 export function ActivityPage() {
-  const { activities, expenses, groups, members, payments } = useGroupStore();
+  const { activities, currentUser, expenses, groups, members, payments } = useGroupStore();
+  const currentMemberIds = new Set(members.filter((member) => member.userId === currentUser.id).map((member) => member.id));
+  const personalActivities = activities.filter(
+    (activity) => activity.actorUserId === currentUser.id || (activity.actorMemberId ? currentMemberIds.has(activity.actorMemberId) : false)
+  );
+  const personalPayments = payments.filter(
+    (payment) => payment.createdByUserId === currentUser.id || currentMemberIds.has(payment.fromMemberId) || currentMemberIds.has(payment.toMemberId)
+  );
+  const personalExpenses = expenses.filter((expense) => expense.createdBy === currentUser.id || currentMemberIds.has(expense.paidBy) || expense.participants.some((memberId) => currentMemberIds.has(memberId)));
 
   return (
     <main className="screen-pad space-y-6">
@@ -14,15 +22,15 @@ export function ActivityPage() {
 
       <Card>
         <div className="grid grid-cols-3 gap-2 text-center">
-          <Stat label="Expenses" value={String(expenses.filter((expense) => expense.status === "active" || expense.status === "edited").length)} />
-          <Stat label="Payments" value={String(payments.length)} />
+          <Stat label="Expenses" value={String(personalExpenses.filter((expense) => expense.status === "active" || expense.status === "edited").length)} />
+          <Stat label="Payments" value={String(personalPayments.length)} />
           <Stat label="Members" value={String(members.filter((member) => member.status === "active").length)} />
         </div>
       </Card>
 
       <section className="space-y-3">
-        {activities.length > 0 ? (
-          activities.map((activity) => (
+        {personalActivities.length > 0 ? (
+          personalActivities.map((activity) => (
             <ActivityItem key={activity.id} activity={activity} group={groups.find((group) => group.id === activity.groupId)} />
           ))
         ) : (

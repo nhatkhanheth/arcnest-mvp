@@ -58,7 +58,7 @@ export function createGroupFromDraft(draft: GroupDraft, currentUser: User, now: 
       groupId: id,
       userId: currentUser.id,
       authUserId: currentUser.authUserId,
-      displayName: currentUser.displayName.split(" ")[0] ?? currentUser.displayName,
+      displayName: getMemberDisplayName(currentUser.displayName, currentUser.primaryWalletAddress),
       walletAddress: currentUser.primaryWalletAddress,
       role: "owner",
       now
@@ -190,9 +190,40 @@ export function subscribeUserMemberships(
   onError?: FirestoreFailureHandler
 ) {
   const database = getFirestoreOrThrow();
-  const membershipsQuery = authUserId
-    ? query(collection(database, "users", authUserId, "memberships"), orderBy("createdAt", "asc"))
-    : query(collectionGroup(database, "members"), where("userId", "==", userId));
+
+  if (authUserId) {
+    let accountMemberships: GroupMember[] = [];
+    let authMemberships: GroupMember[] = [];
+
+    const emit = () => {
+      onMemberships(mergeMemberships(accountMemberships, authMemberships).filter((member) => member.userId === userId));
+    };
+
+    const accountUnsubscribe = onSnapshot(
+      query(collection(database, "accounts", userId, "memberships"), orderBy("createdAt", "asc")),
+      (snapshot) => {
+        accountMemberships = snapshot.docs.map((memberSnapshot) => ({ id: memberSnapshot.id, ...memberSnapshot.data() }) as GroupMember);
+        emit();
+      },
+      handleFirestoreError(onError)
+    );
+
+    const authUnsubscribe = onSnapshot(
+      query(collection(database, "users", authUserId, "memberships"), orderBy("createdAt", "asc")),
+      (snapshot) => {
+        authMemberships = snapshot.docs.map((memberSnapshot) => ({ id: memberSnapshot.id, ...memberSnapshot.data() }) as GroupMember);
+        emit();
+      },
+      handleFirestoreError(onError)
+    );
+
+    return () => {
+      accountUnsubscribe();
+      authUnsubscribe();
+    };
+  }
+
+  const membershipsQuery = query(collectionGroup(database, "members"), where("userId", "==", userId));
 
   return onSnapshot(
     membershipsQuery,
@@ -276,6 +307,9 @@ export async function persistMember(member: GroupMember) {
   if (member.authUserId) {
     batch.set(doc(database, "users", member.authUserId, "memberships", member.id), stripUndefined(member), { merge: true });
   }
+  if (member.userId) {
+    batch.set(doc(database, "accounts", member.userId, "memberships", member.id), stripUndefined(member), { merge: true });
+  }
 
   await batch.commit();
 }
@@ -313,6 +347,9 @@ export async function persistGroupBundle({
   }
   if (ownerMember.authUserId) {
     batch.set(doc(database, "users", ownerMember.authUserId, "memberships", ownerMember.id), stripUndefined(ownerMember), { merge: true });
+  }
+  if (ownerMember.userId) {
+    batch.set(doc(database, "accounts", ownerMember.userId, "memberships", ownerMember.id), stripUndefined(ownerMember), { merge: true });
   }
   batch.set(
     doc(database, "invites", inviteCode),
@@ -415,6 +452,30 @@ function makeInviteCode(name: string, now: number) {
     .padEnd(3, "A");
 
   return `${prefix}-${now.toString(36).slice(-4).toUpperCase()}`;
+}
+
+function mergeMemberships(...groups: GroupMember[][]) {
+  const byId = new Map<string, GroupMember>();
+
+  for (const member of groups.flat()) {
+    byId.set(member.id, member);
+  }
+
+  return [...byId.values()].sort((a, b) => a.createdAt - b.createdAt);
+}
+
+function getMemberDisplayName(displayName: string | undefined, walletAddress: string | undefined) {
+  const normalized = displayName?.trim();
+
+  if (normalized && !normalized.toLowerCase().startsWith("arcnest")) {
+    return normalized;
+  }
+
+  return getWalletDisplayName(walletAddress);
+}
+
+function getWalletDisplayName(walletAddress: string | undefined) {
+  return walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : "Member";
 }
 
 function createMemberAccessRecord(member: GroupMember) {
