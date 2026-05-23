@@ -134,9 +134,19 @@ export function App() {
   }, [reducedMotion, theme]);
 
   function changeTab(tab: NavTab) {
+    replaceInviteUrlWithHome();
     setActiveTab(tab);
     setSelectedGroupId(null);
     setAddExpenseOpen(false);
+  }
+
+  function goHome() {
+    replaceInviteUrlWithHome();
+    setActiveTab("home");
+    setSelectedGroupId(null);
+    setAddExpenseOpen(false);
+    setJoinOpen(false);
+    setJoinInitialCode(undefined);
   }
 
   function openPayment(request: PaymentRequest) {
@@ -276,7 +286,7 @@ export function App() {
             onOpenQR={openQR}
           />
         ) : activeTab === "home" ? (
-          <HomePage onOpenQR={openQR} onOpenPayment={openPayment} onOpenSend={() => setSendOpen(true)} onGoToSplit={() => changeTab("split")} />
+          <HomePage onOpenQR={openQR} onOpenPayment={openPayment} onOpenSend={() => setSendOpen(true)} onGoHome={goHome} onGoToSplit={() => changeTab("split")} />
         ) : activeTab === "groups" ? (
           <GroupsPage
             onOpenGroup={(groupId) => {
@@ -304,7 +314,18 @@ export function App() {
       <JoinGroupSheet
         open={joinOpen}
         initialCode={joinInitialCode}
-        onClose={() => setJoinOpen(false)}
+        onClose={() => {
+          setJoinOpen(false);
+          setJoinInitialCode(undefined);
+          replaceInviteUrlWithHome();
+        }}
+        onJoined={(groupId) => {
+          replaceInviteUrlWithHome();
+          if (groupId) {
+            switchActiveGroup(groupId);
+            setSelectedGroupId(groupId);
+          }
+        }}
         onOpenQR={() => {
           setJoinOpen(false);
           openQR("invite");
@@ -381,6 +402,16 @@ function getInitialInviteCode() {
   }
 
   return extractInviteCodeFromPath(window.location.pathname);
+}
+
+function replaceInviteUrlWithHome() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (extractInviteCodeFromPath(window.location.pathname)) {
+    window.history.replaceState({}, "", "/");
+  }
 }
 
 function getSyncLabel(authState: ReturnType<typeof useAuthStore>, groupSync: ReturnType<typeof useGroupStore>["firebaseSync"]) {

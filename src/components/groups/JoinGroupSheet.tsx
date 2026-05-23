@@ -9,10 +9,11 @@ type JoinGroupSheetProps = {
   open: boolean;
   initialCode?: string;
   onClose: () => void;
+  onJoined?: (groupId?: string) => void;
   onOpenQR: () => void;
 };
 
-export function JoinGroupSheet({ open, initialCode, onClose, onOpenQR }: JoinGroupSheetProps) {
+export function JoinGroupSheet({ open, initialCode, onClose, onJoined, onOpenQR }: JoinGroupSheetProps) {
   const { joinGroupByInviteCode } = useGroupStore();
   const [code, setCode] = useState("");
   const [message, setMessage] = useState<string>();
@@ -35,6 +36,7 @@ export function JoinGroupSheet({ open, initialCode, onClose, onOpenQR }: JoinGro
 
     if (result.ok) {
       setMessage(undefined);
+      onJoined?.(result.groupId);
       onClose();
       return;
     }

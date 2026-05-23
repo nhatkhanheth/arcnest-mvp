@@ -440,9 +440,9 @@ function pruneUnsubscribedGroupData(groupIds: Set<string>) {
     groups: current.groups.filter((group) => groupIds.has(group.id)),
     members: current.members.filter((member) => groupIds.has(member.groupId)),
     expenses: current.expenses.filter((expense) => groupIds.has(expense.groupId)),
-    payments: current.payments.filter((payment) => groupIds.has(payment.groupId)),
+    payments: current.payments.filter((payment) => groupIds.has(payment.groupId) || isLocalOnlyGroupId(payment.groupId)),
     treasuryTransactions: current.treasuryTransactions.filter((transaction) => groupIds.has(transaction.groupId)),
-    activities: current.activities.filter((activity) => groupIds.has(activity.groupId)),
+    activities: current.activities.filter((activity) => groupIds.has(activity.groupId) || isLocalOnlyGroupId(activity.groupId)),
     treasuries: current.treasuries.filter((treasury) => groupIds.has(treasury.groupId)),
     balanceSnapshots: Object.fromEntries(Object.entries(current.balanceSnapshots).filter(([groupId]) => groupIds.has(groupId))),
     inviteCodes: Object.fromEntries(Object.entries(current.inviteCodes).filter(([, groupId]) => groupIds.has(groupId)))
@@ -606,6 +606,10 @@ function getInviteGroupPlaceholder(invite: InviteRecord, now = Date.now()): Grou
     createdAt: invite.createdAt ?? now,
     updatedAt: invite.updatedAt ?? now
   };
+}
+
+function isLocalOnlyGroupId(groupId?: string) {
+  return !groupId || groupId === "group_external" || groupId.startsWith("direct_");
 }
 
 function createC1KDemoSeed(current: ArcNestState, now: number): Pick<

@@ -191,7 +191,7 @@ export function subscribeUserMemberships(
 ) {
   const database = getFirestoreOrThrow();
   const membershipsQuery = authUserId
-    ? query(collectionGroup(database, "members"), where("authUserId", "==", authUserId))
+    ? query(collection(database, "users", authUserId, "memberships"), orderBy("createdAt", "asc"))
     : query(collectionGroup(database, "members"), where("userId", "==", userId));
 
   return onSnapshot(
@@ -273,6 +273,10 @@ export async function persistMember(member: GroupMember) {
     );
   }
 
+  if (member.authUserId) {
+    batch.set(doc(database, "users", member.authUserId, "memberships", member.id), stripUndefined(member), { merge: true });
+  }
+
   await batch.commit();
 }
 
@@ -306,6 +310,9 @@ export async function persistGroupBundle({
       createMemberAccessRecord(ownerMember),
       { merge: true }
     );
+  }
+  if (ownerMember.authUserId) {
+    batch.set(doc(database, "users", ownerMember.authUserId, "memberships", ownerMember.id), stripUndefined(ownerMember), { merge: true });
   }
   batch.set(
     doc(database, "invites", inviteCode),

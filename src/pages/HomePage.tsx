@@ -13,10 +13,11 @@ type HomePageProps = {
   onOpenQR: (mode?: "scan" | "myqr" | "payload" | "invite") => void;
   onOpenPayment: (request: PaymentRequest) => void;
   onOpenSend: () => void;
+  onGoHome?: () => void;
   onGoToSplit: () => void;
 };
 
-export function HomePage({ onOpenQR, onOpenPayment, onOpenSend, onGoToSplit }: HomePageProps) {
+export function HomePage({ onOpenQR, onOpenPayment, onOpenSend, onGoHome, onGoToSplit }: HomePageProps) {
   const { balances, currentUser, globalSummary, members, groups, treasuries, wallet } = useGroupStore();
   const { displayCurrency, primaryWallet } = useSettingsStore();
   const currentMemberIds = new Set(members.filter((member) => member.userId === currentUser.id).map((member) => member.id));
@@ -28,7 +29,9 @@ export function HomePage({ onOpenQR, onOpenPayment, onOpenSend, onGoToSplit }: H
       <header className="flex items-center justify-between">
         <div>
           <p className="text-sm font-medium text-[var(--text-muted)]">Shared payments</p>
-          <h1 className="font-display text-[28px] font-bold">ArcNest</h1>
+          <button type="button" className="focus-ring rounded-lg text-left font-display text-[28px] font-bold" onClick={onGoHome}>
+            ArcNest
+          </button>
         </div>
       </header>
 
