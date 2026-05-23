@@ -56,6 +56,7 @@ export function createPendingMockPayment({
   return {
     id: getPaymentRecordId(request.id, now),
     groupId,
+    expenseId: request.expenseId,
     balanceId: request.balanceId ?? request.id,
     fromMemberId,
     toMemberId,

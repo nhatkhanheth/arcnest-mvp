@@ -171,6 +171,17 @@ export function updateGroupTimestamp(group: Group, now: number): Group {
   };
 }
 
+export function updateGroupFromDraft(group: Group, draft: GroupDraft, now: number): Group {
+  return {
+    ...group,
+    name: draft.name.trim(),
+    type: draft.type,
+    defaultCurrency: draft.defaultCurrency ?? group.defaultCurrency,
+    treasuryEnabled: draft.treasuryEnabled,
+    updatedAt: now
+  };
+}
+
 export function subscribeActiveGroupId(userId: string, onActiveGroupId: (activeGroupId?: string) => void, onError?: FirestoreFailureHandler) {
   const database = getFirestoreOrThrow();
 

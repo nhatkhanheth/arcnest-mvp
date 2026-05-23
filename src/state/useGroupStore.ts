@@ -48,6 +48,7 @@ import {
   subscribeGroup,
   subscribeGroupMembers,
   subscribeUserMemberships,
+  updateGroupFromDraft,
   updateGroupTimestamp,
   updateMemberRole
 } from "../services/groupService";
@@ -747,6 +748,124 @@ function createC1KDemoSeed(current: ArcNestState, now: number): Pick<
   };
 }
 
+function setGroupStatus(
+  groupId: string,
+  status: Group["status"],
+  activityType: Extract<Activity["type"], "group_archived" | "group_deleted">,
+  message: string
+): ActionResult {
+  const group = state.groups.find((item) => item.id === groupId);
+  const actor = getCurrentMember(state.members, groupId, state.currentUser.id);
+
+  if (!group) {
+    return { ok: false, message: "Group not found." };
+  }
+
+  if (!canManageMembers(actor)) {
+    return { ok: false, message: "Your role cannot manage this group." };
+  }
+
+  const now = Date.now();
+  const updatedGroup: Group = {
+    ...group,
+    status,
+    updatedAt: now
+  };
+  const activity = createActivity(
+    {
+      groupId,
+      actorUserId: state.currentUser.id,
+      actorMemberId: actor?.id,
+      type: activityType,
+      targetId: groupId,
+      metadata: {
+        groupName: group.name
+      }
+    },
+    now
+  );
+
+  setState((current) => {
+    const activeGroups = current.groups.filter((item) => item.id !== groupId && item.status === "active");
+
+    return {
+      ...current,
+      activeGroupId: current.activeGroupId === groupId ? activeGroups[0]?.id ?? "" : current.activeGroupId,
+      groups: current.groups.map((item) => (item.id === groupId ? updatedGroup : item)),
+      activities: sortActivities([activity, ...current.activities])
+    };
+  });
+
+  runRemoteForGroup(groupId, async () => {
+    await persistGroup(updatedGroup);
+    await persistActivity(activity);
+  });
+
+  return { ok: true, groupId, message };
+}
+
+function setExpenseStatus(
+  expenseId: string,
+  status: Extract<Expense["status"], "voided" | "deleted">,
+  activityType: Extract<Activity["type"], "expense_voided" | "expense_deleted">,
+  message: string
+): ActionResult {
+  const expense = state.expenses.find((item) => item.id === expenseId);
+
+  if (!expense) {
+    return { ok: false, message: "Expense not found." };
+  }
+
+  const group = state.groups.find((item) => item.id === expense.groupId);
+  const actor = getCurrentMember(state.members, expense.groupId, state.currentUser.id);
+
+  if (!group) {
+    return { ok: false, message: "Group not found." };
+  }
+
+  if (!actor?.permissions.canDeleteExpenses && !canManageMembers(actor)) {
+    return { ok: false, message: "Your role cannot remove this expense." };
+  }
+
+  const now = Date.now();
+  const updatedExpense: Expense = {
+    ...expense,
+    status,
+    updatedAt: now
+  };
+  const updatedGroup = updateGroupTimestamp(group, now);
+  const activity = createActivity(
+    {
+      groupId: expense.groupId,
+      actorMemberId: actor?.id,
+      actorUserId: state.currentUser.id,
+      type: activityType,
+      targetId: expense.id,
+      metadata: {
+        title: expense.title,
+        amountUSDC: expense.amountUSDC
+      }
+    },
+    now
+  );
+
+  setState((current) => ({
+    ...current,
+    expenses: current.expenses.map((item) => (item.id === expenseId ? updatedExpense : item)),
+    groups: current.groups.map((item) => (item.id === expense.groupId ? updatedGroup : item)),
+    activities: sortActivities([activity, ...current.activities])
+  }));
+
+  runRemoteForGroup(expense.groupId, async () => {
+    await persistExpense(updatedExpense);
+    await persistActivity(activity);
+    await persistGroup(updatedGroup);
+    syncRemoteBalanceSnapshot(expense.groupId);
+  });
+
+  return { ok: true, expenseId, message };
+}
+
 const actions = {
   seedDemoData(): ActionResult {
     if (!import.meta.env.DEV) {
@@ -930,6 +1049,77 @@ const actions = {
     });
 
     return { ok: true, groupId: created.group.id, inviteCode: created.inviteCode };
+  },
+
+  editGroup(groupId: string, draft: GroupDraft): ActionResult {
+    const group = state.groups.find((item) => item.id === groupId);
+    const actor = getCurrentMember(state.members, groupId, state.currentUser.id);
+
+    if (!group) {
+      return { ok: false, message: "Group not found." };
+    }
+
+    if (!canManageMembers(actor)) {
+      return { ok: false, message: "Your role cannot edit this group." };
+    }
+
+    if (!draft.name.trim()) {
+      return { ok: false, message: "Add a group name." };
+    }
+
+    const now = Date.now();
+    const updatedGroup = updateGroupFromDraft(group, draft, now);
+    const existingTreasury = state.treasuries.find((treasury) => treasury.groupId === groupId);
+    const updatedTreasury: Treasury | undefined = existingTreasury
+      ? { ...existingTreasury, enabled: draft.treasuryEnabled, updatedAt: now }
+      : draft.treasuryEnabled
+        ? {
+            groupId,
+            enabled: true,
+            balanceUSDC: "0.00",
+            balanceVND: 0,
+            mode: "offchain",
+            updatedAt: now
+          }
+        : undefined;
+    const activity = createActivity(
+      {
+        groupId,
+        actorUserId: state.currentUser.id,
+        actorMemberId: actor?.id,
+        type: "group_edited",
+        targetId: groupId,
+        metadata: {
+          groupName: updatedGroup.name
+        }
+      },
+      now
+    );
+
+    setState((current) => ({
+      ...current,
+      groups: current.groups.map((item) => (item.id === groupId ? updatedGroup : item)),
+      treasuries: updatedTreasury
+        ? upsertTreasury(current.treasuries, updatedTreasury)
+        : current.treasuries,
+      activities: sortActivities([activity, ...current.activities])
+    }));
+
+    runRemoteForGroup(groupId, async () => {
+      await persistGroup(updatedGroup);
+      await persistActivity(activity);
+      syncRemoteBalanceSnapshot(groupId);
+    });
+
+    return { ok: true, groupId };
+  },
+
+  archiveGroup(groupId: string): ActionResult {
+    return setGroupStatus(groupId, "archived", "group_archived", "Group archived.");
+  },
+
+  deleteGroup(groupId: string): ActionResult {
+    return setGroupStatus(groupId, "deleted", "group_deleted", "Group deleted.");
   },
 
   ensureInviteForGroup(groupId: string): ActionResult {
@@ -1423,6 +1613,14 @@ const actions = {
     });
 
     return { ok: true, expenseId };
+  },
+
+  voidExpense(expenseId: string): ActionResult {
+    return setExpenseStatus(expenseId, "voided", "expense_voided", "Expense voided.");
+  },
+
+  deleteExpense(expenseId: string): ActionResult {
+    return setExpenseStatus(expenseId, "deleted", "expense_deleted", "Expense deleted.");
   },
 
   startPayment(request: PaymentRequest): ActionResult {

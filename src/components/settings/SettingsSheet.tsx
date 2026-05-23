@@ -24,12 +24,16 @@ import { convertUSDCToDisplayAmount, formatUSDC, formatVND, shortAddress } from 
 import { useGroupStore } from "../../state/useGroupStore";
 import { useSettingsStore } from "../../state/useSettingsStore";
 import { Button } from "../ui/Button";
-import { Select } from "../ui/Input";
+import { Input, Select } from "../ui/Input";
 import { BottomSheet } from "../ui/Modal";
 
 type SettingsSheetProps = {
   open: boolean;
   wallet: WalletModel;
+  appLockEnabled: boolean;
+  onEnableAppLock: (passcode: string) => { ok: boolean; message?: string };
+  onChangeAppPasscode: (currentPasscode: string, nextPasscode: string) => { ok: boolean; message?: string };
+  onDisableAppLock: (passcode: string) => { ok: boolean; message?: string };
   onClose: () => void;
   onResetOnboarding: () => void;
 };
@@ -55,7 +59,16 @@ const splitModes: Array<{ value: SettingsSplitMode; label: string }> = [
   { value: "treasury", label: "Treasury" }
 ];
 
-export function SettingsSheet({ open, wallet, onClose, onResetOnboarding }: SettingsSheetProps) {
+export function SettingsSheet({
+  open,
+  wallet,
+  appLockEnabled,
+  onEnableAppLock,
+  onChangeAppPasscode,
+  onDisableAppLock,
+  onClose,
+  onResetOnboarding
+}: SettingsSheetProps) {
   const settings = useSettingsStore();
   const { seedDemoData } = useGroupStore();
   const activeWallet = settings.activeWallet;
@@ -119,7 +132,6 @@ export function SettingsSheet({ open, wallet, onClose, onResetOnboarding }: Sett
           ) : null}
           <ActionRow label="Backup wallet" detail="Coming soon. Never enter seed phrases or private keys here." />
           <ToggleRow label="Auto-lock wallet" enabled={settings.autoLockWallet} onToggle={() => settings.toggle("autoLockWallet")} />
-          <ActionRow label="App passcode" detail="Coming soon. No wallet secrets are stored in ArcNest." />
           <div className="surface-row rounded-[18px] p-4 text-sm text-[var(--text-secondary)]">
             External wallets only for this MVP. ArcNest never asks for a seed phrase or private key.
           </div>
@@ -189,6 +201,12 @@ export function SettingsSheet({ open, wallet, onClose, onResetOnboarding }: Sett
             onToggle={() => settings.toggle("showWalletAddress")}
             icon={settings.showWalletAddress ? <Eye size={16} /> : <EyeOff size={16} />}
           />
+          <AppLockControls
+            enabled={appLockEnabled}
+            onEnable={onEnableAppLock}
+            onChange={onChangeAppPasscode}
+            onDisable={onDisableAppLock}
+          />
           <Button fullWidth variant="muted" icon={<RotateCcw size={16} />} onClick={onResetOnboarding}>
             Reset onboarding
           </Button>
@@ -243,6 +261,115 @@ export function SettingsSheet({ open, wallet, onClose, onResetOnboarding }: Sett
         ) : null}
       </div>
     </BottomSheet>
+  );
+}
+
+function AppLockControls({
+  enabled,
+  onEnable,
+  onChange,
+  onDisable
+}: {
+  enabled: boolean;
+  onEnable: (passcode: string) => { ok: boolean; message?: string };
+  onChange: (currentPasscode: string, nextPasscode: string) => { ok: boolean; message?: string };
+  onDisable: (passcode: string) => { ok: boolean; message?: string };
+}) {
+  const [currentPasscode, setCurrentPasscode] = useState("");
+  const [nextPasscode, setNextPasscode] = useState("");
+  const [confirmPasscode, setConfirmPasscode] = useState("");
+  const [message, setMessage] = useState<string>();
+
+  function resetFields() {
+    setCurrentPasscode("");
+    setNextPasscode("");
+    setConfirmPasscode("");
+  }
+
+  function enable() {
+    if (nextPasscode !== confirmPasscode) {
+      setMessage("Confirm passcode does not match.");
+      return;
+    }
+
+    const result = onEnable(nextPasscode);
+    setMessage(result.message ?? (result.ok ? "App Lock enabled." : "Could not enable App Lock."));
+    if (result.ok) {
+      resetFields();
+    }
+  }
+
+  function change() {
+    if (nextPasscode !== confirmPasscode) {
+      setMessage("Confirm passcode does not match.");
+      return;
+    }
+
+    const result = onChange(currentPasscode, nextPasscode);
+    setMessage(result.message ?? (result.ok ? "Passcode changed." : "Could not change passcode."));
+    if (result.ok) {
+      resetFields();
+    }
+  }
+
+  function disable() {
+    const result = onDisable(currentPasscode);
+    setMessage(result.message ?? (result.ok ? "App Lock disabled." : "Could not disable App Lock."));
+    if (result.ok) {
+      resetFields();
+    }
+  }
+
+  return (
+    <div className="surface-row rounded-[18px] p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="font-semibold">App Lock</p>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">
+            Local app passcode only. It does not secure wallet funds or store wallet secrets.
+          </p>
+        </div>
+        <Tag label={enabled ? "enabled" : "off"} tone={enabled ? "success" : "muted"} />
+      </div>
+      <div className="mt-4 space-y-3">
+        {enabled ? (
+          <Input
+            label="Current passcode"
+            type="password"
+            inputMode="numeric"
+            value={currentPasscode}
+            onChange={(event) => setCurrentPasscode(event.target.value)}
+          />
+        ) : null}
+        <Input
+          label={enabled ? "New passcode" : "Create passcode"}
+          type="password"
+          inputMode="numeric"
+          value={nextPasscode}
+          onChange={(event) => setNextPasscode(event.target.value)}
+        />
+        <Input
+          label="Confirm passcode"
+          type="password"
+          inputMode="numeric"
+          value={confirmPasscode}
+          onChange={(event) => setConfirmPasscode(event.target.value)}
+        />
+        <div className="grid grid-cols-2 gap-2">
+          <Button variant="secondary" size="sm" onClick={enabled ? change : enable}>
+            {enabled ? "Change" : "Enable"}
+          </Button>
+          <Button variant="muted" size="sm" onClick={disable} disabled={!enabled}>
+            Disable
+          </Button>
+        </div>
+        {message ? (
+          <div className="rounded-[16px] border border-[var(--arc-accent)]/40 bg-[var(--arc-soft)] p-3 text-sm text-[var(--text-secondary)]">
+            {message}
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }
 

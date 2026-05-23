@@ -189,7 +189,7 @@ export function AddExpenseSheet({ open, group, members, expense, onClose, onSave
   return (
     <BottomSheet
       open={open}
-      title={step === "details" ? "Add expense" : "Expense review"}
+      title={step === "details" ? (expense ? "Edit expense" : "Add expense") : "Expense review"}
       subtitle={step === "details" ? group.name : expense ? "Review changes before saving" : "Calculated balances before saving"}
       onClose={closeSheet}
     >

@@ -27,7 +27,13 @@ import { fetchArcUSDCBalance } from "../services/arcBalanceService";
 import { USDC_VND_RATE } from "../services/balanceService";
 
 type QRMode = "scan" | "myqr" | "payload" | "invite";
+type GroupOpenContext = { expenseId?: string; paymentId?: string };
+type RouteState = { tab: NavTab; groupId?: string; expenseId?: string; paymentId?: string };
+type AppLockState = { enabled: boolean; passcodeHash?: string; locked: boolean };
+type PasscodeResult = { ok: boolean; message?: string };
 const onboardingStorageKey = "arcnest_onboarding_completed";
+const navStorageKey = "arcnest_last_route_v1";
+const appLockStorageKey = "arcnest_app_lock_v1";
 
 export function App() {
   const {
@@ -50,8 +56,11 @@ export function App() {
   } = useGroupStore();
   const authState = useAuthStore();
   const { theme, setTheme, reducedMotion, primaryWallet } = useSettingsStore();
-  const [activeTab, setActiveTab] = useState<NavTab>("home");
-  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const initialRoute = useRef<RouteState>(getInitialRouteState());
+  const [activeTab, setActiveTab] = useState<NavTab>(initialRoute.current.tab);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(initialRoute.current.groupId ?? null);
+  const [selectedExpenseId, setSelectedExpenseId] = useState<string | undefined>(initialRoute.current.expenseId);
+  const [selectedPaymentId, setSelectedPaymentId] = useState<string | undefined>(initialRoute.current.paymentId);
   const [createOpen, setCreateOpen] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
   const [joinInitialCode, setJoinInitialCode] = useState<string>();
@@ -66,10 +75,22 @@ export function App() {
   const [qrMode, setQRMode] = useState<QRMode>("scan");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [onboardingComplete, setOnboardingComplete] = useState(() => getStoredOnboardingComplete());
+  const [appLock, setAppLock] = useState<AppLockState>(() => getStoredAppLockState());
+  const [unlockError, setUnlockError] = useState<string>();
+  const previousWalletAddress = useRef(primaryWallet.address);
   const pendingInviteCode = useRef<string | undefined>(getInitialInviteCode());
 
   useEffect(() => {
     startAuthStore();
+  }, []);
+
+  useEffect(() => {
+    function handlePopState() {
+      applyRouteState(getRouteStateFromUrl(), { switchGroup: true });
+    }
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
   useEffect(() => {
@@ -85,6 +106,19 @@ export function App() {
 
     setPrimaryWalletAddress(primaryWallet.address);
   }, [primaryWallet.address, setPrimaryWalletAddress, setWalletBalance]);
+
+  useEffect(() => {
+    const previous = previousWalletAddress.current;
+    previousWalletAddress.current = primaryWallet.address;
+
+    if (primaryWallet.address && primaryWallet.address !== previous) {
+      commitRoute({ tab: "home" }, { replace: true });
+
+      if (!onboardingComplete || appLock.locked) {
+        completeOnboarding();
+      }
+    }
+  }, [appLock.locked, onboardingComplete, primaryWallet.address]);
 
   useEffect(() => {
     if (!primaryWallet.address) {
@@ -134,26 +168,79 @@ export function App() {
   }, [reducedMotion, theme]);
 
   function changeTab(tab: NavTab) {
-    replaceInviteUrlWithHome();
-    setActiveTab(tab);
-    setSelectedGroupId(null);
-    setAddExpenseOpen(false);
+    commitRoute({ tab });
+    setJoinOpen(false);
+    setJoinInitialCode(undefined);
   }
 
   function goHome() {
-    replaceInviteUrlWithHome();
-    setActiveTab("home");
-    setSelectedGroupId(null);
+    commitRoute({ tab: "home" });
     setAddExpenseOpen(false);
     setJoinOpen(false);
     setJoinInitialCode(undefined);
   }
 
-  function openGroupDetail(groupId: string) {
-    replaceInviteUrlWithHome();
+  function openGroupDetail(groupId: string, context: GroupOpenContext = {}) {
     switchActiveGroup(groupId);
-    setSelectedGroupId(groupId);
+    commitRoute({
+      tab: "groups",
+      groupId,
+      expenseId: context.expenseId,
+      paymentId: context.paymentId
+    });
     setAddExpenseOpen(false);
+  }
+
+  function closeGroupDetail() {
+    commitRoute({ tab: "groups" });
+    setAddExpenseOpen(false);
+  }
+
+  function selectGroupExpense(expenseId?: string, options?: { replace?: boolean }) {
+    if (!selectedGroupId) {
+      return;
+    }
+
+    commitRoute(
+      {
+        tab: "groups",
+        groupId: selectedGroupId,
+        expenseId,
+        paymentId: undefined
+      },
+      options
+    );
+  }
+
+  function commitRoute(route: RouteState, options: { replace?: boolean } = {}) {
+    applyRouteState(route, { switchGroup: true });
+    persistRouteState(route);
+
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const path = routeToPath(route);
+    if (options.replace) {
+      window.history.replaceState({}, "", path);
+      return;
+    }
+
+    if (`${window.location.pathname}${window.location.search}` !== path) {
+      window.history.pushState({}, "", path);
+    }
+  }
+
+  function applyRouteState(route: RouteState, options: { switchGroup?: boolean } = {}) {
+    setActiveTab(route.tab);
+    setSelectedGroupId(route.groupId ?? null);
+    setSelectedExpenseId(route.expenseId);
+    setSelectedPaymentId(route.paymentId);
+    setAddExpenseOpen(false);
+
+    if (options.switchGroup && route.groupId) {
+      switchActiveGroup(route.groupId);
+    }
   }
 
   function openPayment(request: PaymentRequest) {
@@ -247,6 +334,11 @@ export function App() {
   function completeOnboarding() {
     setStoredOnboardingComplete(true);
     setOnboardingComplete(true);
+    setUnlockError(undefined);
+
+    if (appLock.enabled && appLock.locked) {
+      updateAppLock({ ...appLock, locked: false });
+    }
   }
 
   function resetOnboarding() {
@@ -255,18 +347,100 @@ export function App() {
     setSettingsOpen(false);
   }
 
-  const selectedGroup = selectedGroupId ? groups.find((group) => group.id === selectedGroupId) : undefined;
+  function updateAppLock(nextLock: AppLockState) {
+    setStoredAppLockState(nextLock);
+    setAppLock(nextLock);
+  }
+
+  function unlockApp(passcode: string) {
+    if (!appLock.enabled || !appLock.passcodeHash) {
+      completeOnboarding();
+      return;
+    }
+
+    if (hashPasscode(passcode) !== appLock.passcodeHash) {
+      setUnlockError("Passcode does not match.");
+      return;
+    }
+
+    setStoredOnboardingComplete(true);
+    setOnboardingComplete(true);
+    setUnlockError(undefined);
+    updateAppLock({ ...appLock, locked: false });
+  }
+
+  function enableAppLock(passcode: string): PasscodeResult {
+    const validation = validatePasscode(passcode);
+    if (!validation.ok) {
+      return validation;
+    }
+
+    updateAppLock({
+      enabled: true,
+      passcodeHash: hashPasscode(passcode),
+      locked: false
+    });
+    return { ok: true, message: "App Lock enabled." };
+  }
+
+  function changeAppPasscode(currentPasscode: string, nextPasscode: string): PasscodeResult {
+    if (!appLock.enabled || !appLock.passcodeHash) {
+      return enableAppLock(nextPasscode);
+    }
+
+    if (hashPasscode(currentPasscode) !== appLock.passcodeHash) {
+      return { ok: false, message: "Current passcode does not match." };
+    }
+
+    const validation = validatePasscode(nextPasscode);
+    if (!validation.ok) {
+      return validation;
+    }
+
+    updateAppLock({
+      enabled: true,
+      passcodeHash: hashPasscode(nextPasscode),
+      locked: false
+    });
+    return { ok: true, message: "Passcode changed." };
+  }
+
+  function disableAppLock(passcode: string): PasscodeResult {
+    if (appLock.enabled && appLock.passcodeHash && hashPasscode(passcode) !== appLock.passcodeHash) {
+      return { ok: false, message: "Passcode does not match." };
+    }
+
+    updateAppLock({
+      enabled: false,
+      passcodeHash: undefined,
+      locked: false
+    });
+    return { ok: true, message: "App Lock disabled." };
+  }
+
   const qrGroup = groups.find((group) => group.id === activeGroupId) ?? groups[0];
   const qrInviteCode = qrGroup ? Object.entries(inviteCodes).find(([, groupId]) => groupId === qrGroup.id)?.[0] : undefined;
   const activePayment = paymentId ? payments.find((payment) => payment.id === paymentId) : undefined;
 
-  const showGlobalActions = !selectedGroup && activeTab !== "activity";
+  const showGlobalActions = !selectedGroupId && activeTab !== "activity";
 
-  if (!onboardingComplete) {
+  if (!onboardingComplete || (appLock.enabled && appLock.locked)) {
     return (
       <div className="app-shell">
         <div className="mobile-frame">
-          <WelcomeScreen onContinueDemo={completeOnboarding} onComplete={completeOnboarding} />
+          <WelcomeScreen
+            onContinueDemo={() => {
+              if (appLock.enabled && appLock.locked) {
+                setUnlockError("Unlock App first, or reconnect your wallet to reset the local session.");
+                return;
+              }
+              completeOnboarding();
+            }}
+            appLocked={appLock.enabled && appLock.locked}
+            hasLocalPasscode={Boolean(appLock.passcodeHash)}
+            unlockError={unlockError}
+            onUnlockApp={unlockApp}
+          />
         </div>
       </div>
     );
@@ -283,14 +457,18 @@ export function App() {
           />
         ) : null}
 
-        {selectedGroup ? (
+        {selectedGroupId ? (
           <GroupDetailPage
-            groupId={selectedGroup.id}
+            groupId={selectedGroupId}
             addExpenseOpen={addExpenseOpen}
-            onBack={() => setSelectedGroupId(null)}
+            onBack={closeGroupDetail}
             onOpenAddExpense={() => setAddExpenseOpen(true)}
             onCloseAddExpense={() => setAddExpenseOpen(false)}
             onOpenQR={openQR}
+            selectedExpenseId={selectedExpenseId}
+            selectedPaymentId={selectedPaymentId}
+            onSelectExpense={selectGroupExpense}
+            onOpenPayment={openPayment}
           />
         ) : activeTab === "home" ? (
           <HomePage
@@ -303,10 +481,7 @@ export function App() {
           />
         ) : activeTab === "groups" ? (
           <GroupsPage
-            onOpenGroup={(groupId) => {
-              switchActiveGroup(groupId);
-              setSelectedGroupId(groupId);
-            }}
+            onOpenGroup={openGroupDetail}
             onCreateGroup={() => setCreateOpen(true)}
             onJoinGroup={() => {
               setJoinInitialCode(undefined);
@@ -314,9 +489,9 @@ export function App() {
             }}
           />
         ) : activeTab === "split" ? (
-          <SplitPage onOpenPayment={openPayment} />
+          <SplitPage onOpenPayment={openPayment} onOpenGroup={openGroupDetail} />
         ) : activeTab === "activity" ? (
-          <ActivityPage />
+          <ActivityPage onOpenGroup={openGroupDetail} />
         ) : (
           <WalletPage theme={theme} onToggleTheme={toggleTheme} onOpenQR={openQR} onOpenSend={() => setSendOpen(true)} />
         )}
@@ -331,10 +506,11 @@ export function App() {
         onClose={() => {
           setJoinOpen(false);
           setJoinInitialCode(undefined);
-          replaceInviteUrlWithHome();
+          if (extractInviteCodeFromPath(window.location.pathname)) {
+            goHome();
+          }
         }}
         onJoined={(groupId) => {
-          replaceInviteUrlWithHome();
           if (groupId) {
             openGroupDetail(groupId);
           }
@@ -383,7 +559,16 @@ export function App() {
         onEnsureInvite={ensureInviteForQR}
         onClose={() => setQROpen(false)}
       />
-      <SettingsSheet open={settingsOpen} wallet={wallet} onClose={() => setSettingsOpen(false)} onResetOnboarding={resetOnboarding} />
+      <SettingsSheet
+        open={settingsOpen}
+        wallet={wallet}
+        appLockEnabled={appLock.enabled}
+        onEnableAppLock={enableAppLock}
+        onChangeAppPasscode={changeAppPasscode}
+        onDisableAppLock={disableAppLock}
+        onClose={() => setSettingsOpen(false)}
+        onResetOnboarding={resetOnboarding}
+      />
     </div>
   );
 }
@@ -409,22 +594,173 @@ function setStoredOnboardingComplete(complete: boolean) {
   window.localStorage.removeItem(onboardingStorageKey);
 }
 
+function getInitialRouteState(): RouteState {
+  if (typeof window === "undefined") {
+    return { tab: "home" };
+  }
+
+  const routeFromUrl = getRouteStateFromUrl();
+  const hasRoutePath = window.location.pathname !== "/" && !extractInviteCodeFromPath(window.location.pathname);
+
+  if (hasRoutePath || window.location.search) {
+    return routeFromUrl;
+  }
+
+  return getStoredRouteState() ?? routeFromUrl;
+}
+
+function getRouteStateFromUrl(): RouteState {
+  if (typeof window === "undefined") {
+    return { tab: "home" };
+  }
+
+  const path = window.location.pathname.replace(/\/+$/, "") || "/";
+  const params = new URLSearchParams(window.location.search);
+  const expenseId = params.get("expense") || undefined;
+  const paymentId = params.get("payment") || undefined;
+  const groupMatch = path.match(/^\/groups\/([^/]+)$/);
+
+  if (groupMatch?.[1]) {
+    return {
+      tab: "groups",
+      groupId: decodeURIComponent(groupMatch[1]),
+      expenseId,
+      paymentId
+    };
+  }
+
+  if (path === "/groups") {
+    return { tab: "groups" };
+  }
+
+  if (path === "/split") {
+    return { tab: "split", paymentId };
+  }
+
+  if (path === "/activity") {
+    return { tab: "activity", paymentId };
+  }
+
+  if (path === "/wallet") {
+    return { tab: "wallet" };
+  }
+
+  return { tab: "home" };
+}
+
+function routeToPath(route: RouteState) {
+  const params = new URLSearchParams();
+
+  if (route.expenseId) {
+    params.set("expense", route.expenseId);
+  }
+
+  if (route.paymentId) {
+    params.set("payment", route.paymentId);
+  }
+
+  const query = params.toString();
+  const suffix = query ? `?${query}` : "";
+
+  if (route.groupId) {
+    return `/groups/${encodeURIComponent(route.groupId)}${suffix}`;
+  }
+
+  if (route.tab === "home") {
+    return `/${suffix}`;
+  }
+
+  return `/${route.tab}${suffix}`;
+}
+
+function persistRouteState(route: RouteState) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(navStorageKey, JSON.stringify(route));
+}
+
+function getStoredRouteState() {
+  if (typeof window === "undefined") {
+    return undefined;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(navStorageKey);
+    if (!raw) {
+      return undefined;
+    }
+
+    const parsed = JSON.parse(raw) as Partial<RouteState>;
+    if (!parsed.tab || !["home", "groups", "split", "activity", "wallet"].includes(parsed.tab)) {
+      return undefined;
+    }
+
+    return parsed as RouteState;
+  } catch {
+    return undefined;
+  }
+}
+
+function getStoredAppLockState(): AppLockState {
+  if (typeof window === "undefined") {
+    return { enabled: false, locked: false };
+  }
+
+  try {
+    const raw = window.localStorage.getItem(appLockStorageKey);
+    if (!raw) {
+      return { enabled: false, locked: false };
+    }
+
+    const parsed = JSON.parse(raw) as Partial<AppLockState>;
+    const enabled = Boolean(parsed.enabled && parsed.passcodeHash);
+
+    return {
+      enabled,
+      passcodeHash: typeof parsed.passcodeHash === "string" ? parsed.passcodeHash : undefined,
+      locked: enabled
+    };
+  } catch {
+    return { enabled: false, locked: false };
+  }
+}
+
+function setStoredAppLockState(lock: AppLockState) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(appLockStorageKey, JSON.stringify(lock));
+}
+
+function validatePasscode(passcode: string): PasscodeResult {
+  if (passcode.trim().length < 4) {
+    return { ok: false, message: "Use at least 4 digits or characters." };
+  }
+
+  return { ok: true };
+}
+
+function hashPasscode(passcode: string) {
+  const source = `arcnest-local-lock:${passcode}`;
+  let hash = 2166136261;
+
+  for (let index = 0; index < source.length; index += 1) {
+    hash ^= source.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return (hash >>> 0).toString(36);
+}
+
 function getInitialInviteCode() {
   if (typeof window === "undefined") {
     return undefined;
   }
 
   return extractInviteCodeFromPath(window.location.pathname);
-}
-
-function replaceInviteUrlWithHome() {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  if (extractInviteCodeFromPath(window.location.pathname)) {
-    window.history.replaceState({}, "", "/");
-  }
 }
 
 function getSyncLabel(authState: ReturnType<typeof useAuthStore>, groupSync: ReturnType<typeof useGroupStore>["firebaseSync"]) {

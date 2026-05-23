@@ -214,5 +214,5 @@ Do not use Pages source `Deploy from a branch / main / root` for this Vite app. 
 - Camera QR scanning is not implemented yet; paste payload/link is the fallback and the UI labels camera scan as coming soon.
 - Arc payments use Demo Mode until `VITE_ARC_RPC_URL` and `VITE_ARC_USDC_ADDRESS` are configured and the app is redeployed.
 - Dynamic embedded wallets require `VITE_DYNAMIC_ENVIRONMENT_ID` and Dynamic dashboard setup for email/social auth and wallet creation.
-- Import wallet, backup, and passcode flows are not implemented. Do not add seed phrase or private key entry to the client.
+- Import wallet and backup flows are not implemented. App Lock is local-only and does not secure wallet funds. Do not add seed phrase or private key entry to the client.
 - Add backend payment verification, Firestore rules tests, rate limiting, and abuse controls before real users.

@@ -12,18 +12,21 @@ import { useSettingsStore } from "../state/useSettingsStore";
 
 type SplitPageProps = {
   onOpenPayment: (request: PaymentRequest) => void;
+  onOpenGroup: (groupId: string, context?: { expenseId?: string; paymentId?: string }) => void;
 };
 
-export function SplitPage({ onOpenPayment }: SplitPageProps) {
+export function SplitPage({ onOpenPayment, onOpenGroup }: SplitPageProps) {
   const { balances, currentUser, groups, members, treasuries } = useGroupStore();
   const { displayCurrency, primaryWallet } = useSettingsStore();
   const [groupFilter, setGroupFilter] = useState("all");
+  const activeGroups = groups.filter((group) => group.status === "active");
+  const activeGroupIds = new Set(activeGroups.map((group) => group.id));
   const currentMemberIds = useMemo(
     () => new Set(members.filter((member) => member.userId === currentUser.id).map((member) => member.id)),
     [currentUser.id, members]
   );
 
-  const filteredBalances = balances.filter((balance) => groupFilter === "all" || balance.groupId === groupFilter);
+  const filteredBalances = balances.filter((balance) => activeGroupIds.has(balance.groupId) && (groupFilter === "all" || balance.groupId === groupFilter));
   const youOwe = filteredBalances.filter((balance) => currentMemberIds.has(balance.fromMemberId) && balance.status !== "paid");
   const youllReceive = filteredBalances.filter((balance) => currentMemberIds.has(balance.toMemberId) && balance.status !== "paid");
 
@@ -44,7 +47,7 @@ export function SplitPage({ onOpenPayment }: SplitPageProps) {
         </div>
         <Select value={groupFilter} onChange={(event) => setGroupFilter(event.target.value)}>
           <option value="all">All groups</option>
-          {groups.map((group) => (
+          {activeGroups.map((group) => (
             <option key={group.id} value={group.id}>
               {group.name}
             </option>
@@ -78,6 +81,7 @@ export function SplitPage({ onOpenPayment }: SplitPageProps) {
               currentUserId={currentUser.id}
               displayCurrency={displayCurrency}
               onOpenPayment={onOpenPayment}
+              onOpenGroup={onOpenGroup}
             />
           ))
         ) : (
@@ -100,6 +104,7 @@ export function SplitPage({ onOpenPayment }: SplitPageProps) {
               currentUserId={currentUser.id}
               displayCurrency={displayCurrency}
               onOpenPayment={onOpenPayment}
+              onOpenGroup={onOpenGroup}
             />
           ))
         ) : (
@@ -128,7 +133,8 @@ function SplitRow({
   walletAddress,
   currentUserId,
   displayCurrency,
-  onOpenPayment
+  onOpenPayment,
+  onOpenGroup
 }: {
   balance: Balance;
   mode: "owe" | "receive";
@@ -139,6 +145,7 @@ function SplitRow({
   currentUserId: string;
   displayCurrency: ReturnType<typeof useSettingsStore>["displayCurrency"];
   onOpenPayment: (request: PaymentRequest) => void;
+  onOpenGroup: (groupId: string, context?: { expenseId?: string; paymentId?: string }) => void;
 }) {
   const group = groups.find((item) => item.id === balance.groupId);
   const from = members.find((member) => member.id === balance.fromMemberId);
@@ -148,8 +155,25 @@ function SplitRow({
   const displayName = mode === "owe" ? (isTreasuryMemberId(balance.toMemberId) ? "Group treasury" : to?.displayName) : from?.displayName;
   const toWalletAddress = getBalanceRecipientWallet(balance, members, treasuries);
 
+  function openGroupDetails() {
+    if (group) {
+      onOpenGroup(group.id, { expenseId: balance.expenseId });
+    }
+  }
+
   return (
-    <div className="surface-row flex min-h-[82px] items-center justify-between gap-3 rounded-[20px] p-4">
+    <div
+      role="button"
+      tabIndex={group ? 0 : -1}
+      className="surface-row focus-ring flex min-h-[82px] cursor-pointer items-center justify-between gap-3 rounded-[20px] p-4"
+      onClick={openGroupDetails}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openGroupDetails();
+        }
+      }}
+    >
       <div className="min-w-0">
         <p className="truncate font-semibold">{mode === "owe" ? `Pay ${displayName ?? "Member"}` : `${displayName ?? "Member"} pays you`}</p>
         <p className="truncate text-sm text-[var(--text-muted)]">{group?.name}</p>
@@ -160,25 +184,28 @@ function SplitRow({
       <div className="shrink-0 text-right">
         <p className="number mb-2 font-bold">{formatUSDC(balance.amountUSDC)}</p>
         {mode === "owe" ? (
-          <PayButton
-            onClick={() =>
-              onOpenPayment({
-                id: balance.id,
-                balanceId: balance.id,
-                groupId: group?.id,
-                groupName: group?.name,
-                fromMemberId: balance.fromMemberId,
-                toMemberId: balance.toMemberId,
-                toName: displayName ?? "Member",
-                toWalletAddress,
-                fromWalletAddress: walletAddress,
-                amountUSDC: balance.amountUSDC,
-                amountVND: balance.amountVND,
-                note: group?.name
-              })
-            }
-            disabled={!payAllowed}
-          />
+          <span onClick={(event) => event.stopPropagation()}>
+            <PayButton
+              onClick={() =>
+                onOpenPayment({
+                  id: balance.id,
+                  expenseId: balance.expenseId,
+                  balanceId: balance.id,
+                  groupId: group?.id,
+                  groupName: group?.name,
+                  fromMemberId: balance.fromMemberId,
+                  toMemberId: balance.toMemberId,
+                  toName: displayName ?? "Member",
+                  toWalletAddress,
+                  fromWalletAddress: walletAddress,
+                  amountUSDC: balance.amountUSDC,
+                  amountVND: balance.amountVND,
+                  note: group?.name
+                })
+              }
+              disabled={!payAllowed}
+            />
+          </span>
         ) : null}
       </div>
     </div>

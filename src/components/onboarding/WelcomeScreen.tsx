@@ -4,12 +4,16 @@ import { dynamicEnabled } from "../../lib/dynamic";
 import { getWalletRuntime, openMetaMaskDeepLink } from "../../lib/mobileWallet";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
+import { Input } from "../ui/Input";
 import { DynamicEmbeddedWalletPanel } from "../wallet/DynamicEmbeddedWalletPanel";
 import { WalletConnectPanel } from "../wallet/WalletConnectPanel";
 
 type WelcomeScreenProps = {
   onContinueDemo: () => void;
-  onComplete: () => void;
+  appLocked?: boolean;
+  hasLocalPasscode?: boolean;
+  unlockError?: string;
+  onUnlockApp?: (passcode: string) => void;
 };
 
 const features = [
@@ -19,9 +23,10 @@ const features = [
   { label: "QR Pay and invite", icon: <QrCode size={18} /> }
 ];
 
-export function WelcomeScreen({ onContinueDemo, onComplete }: WelcomeScreenProps) {
+export function WelcomeScreen({ onContinueDemo, appLocked, hasLocalPasscode, unlockError, onUnlockApp }: WelcomeScreenProps) {
   const [showWalletConnect, setShowWalletConnect] = useState(false);
   const [showDynamic, setShowDynamic] = useState(false);
+  const [passcode, setPasscode] = useState("");
   const walletRuntime = getWalletRuntime();
 
   return (
@@ -57,6 +62,26 @@ export function WelcomeScreen({ onContinueDemo, onComplete }: WelcomeScreenProps
       </Card>
 
       <div className="space-y-3">
+        {appLocked && hasLocalPasscode ? (
+          <div className="space-y-3">
+            <Input
+              label="App passcode"
+              type="password"
+              inputMode="numeric"
+              value={passcode}
+              onChange={(event) => setPasscode(event.target.value)}
+              placeholder="Enter local passcode"
+            />
+            {unlockError ? (
+              <div className="rounded-[18px] border border-[var(--warning)]/40 bg-[var(--warning)]/10 p-4 text-sm text-[var(--warning)]">
+                {unlockError}
+              </div>
+            ) : null}
+            <Button fullWidth size="lg" icon={<LockKeyhole size={18} />} onClick={() => onUnlockApp?.(passcode)}>
+              Unlock App
+            </Button>
+          </div>
+        ) : null}
         <Button fullWidth size="lg" onClick={onContinueDemo}>
           Continue in Demo Mode
         </Button>
@@ -78,25 +103,18 @@ export function WelcomeScreen({ onContinueDemo, onComplete }: WelcomeScreenProps
       {showWalletConnect ? (
         <div className="space-y-3">
           <WalletConnectPanel />
-          <Button fullWidth variant="muted" onClick={onComplete}>
-            Continue to ArcNest
-          </Button>
         </div>
       ) : null}
 
       {showDynamic ? (
         <div className="space-y-3">
           <DynamicEmbeddedWalletPanel />
-          <Button fullWidth variant="muted" onClick={onComplete}>
-            Continue to ArcNest
-          </Button>
         </div>
       ) : null}
 
       <section className="grid gap-3">
         {!dynamicEnabled ? <ComingSoonCard title="Embedded wallet" detail="Hidden until VITE_DYNAMIC_ENVIRONMENT_ID is configured." /> : null}
         <ComingSoonCard title="Import wallet" detail="Not supported. ArcNest will not ask for seed phrases or private keys." />
-        <ComingSoonCard title="App passcode" detail="Coming soon. No wallet secrets are stored in this MVP." />
       </section>
     </main>
   );

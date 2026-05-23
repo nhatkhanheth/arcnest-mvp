@@ -14,7 +14,7 @@ type HomePageProps = {
   onOpenPayment: (request: PaymentRequest) => void;
   onOpenSend: () => void;
   onGoHome?: () => void;
-  onOpenGroup: (groupId: string) => void;
+  onOpenGroup: (groupId: string, context?: { expenseId?: string; paymentId?: string }) => void;
   onGoToSplit: () => void;
 };
 
@@ -22,8 +22,9 @@ export function HomePage({ onOpenQR, onOpenPayment, onOpenSend, onGoHome, onOpen
   const { balances, currentUser, globalSummary, members, groups, treasuries, wallet } = useGroupStore();
   const { displayCurrency, primaryWallet } = useSettingsStore();
   const currentMemberIds = new Set(members.filter((member) => member.userId === currentUser.id).map((member) => member.id));
-  const needToPay = balances.filter((balance) => currentMemberIds.has(balance.fromMemberId) && balance.status !== "paid");
-  const needToReceive = balances.filter((balance) => currentMemberIds.has(balance.toMemberId) && balance.status !== "paid");
+  const activeGroupIds = new Set(groups.filter((group) => group.status === "active").map((group) => group.id));
+  const needToPay = balances.filter((balance) => activeGroupIds.has(balance.groupId) && currentMemberIds.has(balance.fromMemberId) && balance.status !== "paid");
+  const needToReceive = balances.filter((balance) => activeGroupIds.has(balance.groupId) && currentMemberIds.has(balance.toMemberId) && balance.status !== "paid");
 
   return (
     <main className="screen-pad space-y-6">
@@ -168,7 +169,7 @@ function BalanceRow({
   walletAddress: string;
   currentUserId: string;
   displayCurrency: ReturnType<typeof useSettingsStore>["displayCurrency"];
-  onOpenGroup: (groupId: string) => void;
+  onOpenGroup: (groupId: string, context?: { expenseId?: string; paymentId?: string }) => void;
   onOpenPayment: (request: PaymentRequest) => void;
 }) {
   const group = groups.find((item) => item.id === balance.groupId);
@@ -182,7 +183,7 @@ function BalanceRow({
 
   function openGroupDetails() {
     if (group) {
-      onOpenGroup(group.id);
+      onOpenGroup(group.id, { expenseId: balance.expenseId });
     }
   }
 
@@ -213,20 +214,21 @@ function BalanceRow({
           <span onClick={(event) => event.stopPropagation()}>
             <PayButton
               onClick={() =>
-              onOpenPayment({
-                id: balance.id,
-                balanceId: balance.id,
-                groupId: group?.id,
-                groupName: group?.name,
-                fromMemberId: balance.fromMemberId,
-                toMemberId: balance.toMemberId,
-                toName: counterpartyName,
-                toWalletAddress,
-                fromWalletAddress: walletAddress,
-                amountUSDC: balance.amountUSDC,
-                amountVND: balance.amountVND,
-                note: group?.name
-              })
+                onOpenPayment({
+                  id: balance.id,
+                  expenseId: balance.expenseId,
+                  balanceId: balance.id,
+                  groupId: group?.id,
+                  groupName: group?.name,
+                  fromMemberId: balance.fromMemberId,
+                  toMemberId: balance.toMemberId,
+                  toName: counterpartyName,
+                  toWalletAddress,
+                  fromWalletAddress: walletAddress,
+                  amountUSDC: balance.amountUSDC,
+                  amountVND: balance.amountVND,
+                  note: group?.name
+                })
               }
               disabled={!payAllowed}
             />

@@ -2,6 +2,7 @@ export type PaymentRequest = {
   id: string;
   groupId?: string;
   groupName?: string;
+  expenseId?: string;
   balanceId?: string;
   fromMemberId?: string;
   toMemberId?: string;

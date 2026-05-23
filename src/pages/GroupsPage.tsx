@@ -11,6 +11,7 @@ type GroupsPageProps = {
 
 export function GroupsPage({ onOpenGroup, onCreateGroup, onJoinGroup }: GroupsPageProps) {
   const { globalSummary, groups, members } = useGroupStore();
+  const activeGroups = groups.filter((group) => group.status === "active");
 
   return (
     <main className="screen-pad space-y-6">
@@ -29,8 +30,8 @@ export function GroupsPage({ onOpenGroup, onCreateGroup, onJoinGroup }: GroupsPa
       </div>
 
       <section className="space-y-4">
-        {groups.length > 0 ? (
-          groups.map((group) => (
+        {activeGroups.length > 0 ? (
+          activeGroups.map((group) => (
             <GroupCard
               key={group.id}
               group={group}

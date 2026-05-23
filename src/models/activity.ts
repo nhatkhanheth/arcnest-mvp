@@ -5,11 +5,15 @@ export type Activity = {
   actorMemberId?: string;
   type:
     | "group_created"
+    | "group_edited"
+    | "group_archived"
+    | "group_deleted"
     | "member_joined"
     | "member_removed"
     | "role_changed"
     | "expense_created"
     | "expense_edited"
+    | "expense_voided"
     | "expense_deleted"
     | "payment_started"
     | "payment_paid"
