@@ -220,15 +220,12 @@ export function subscribeUserMemberships(
     };
 
     const accountUnsubscribe = onSnapshot(
-      query(collection(database, "accounts", userId, "memberships"), orderBy("createdAt", "asc")),
+      query(collection(database, "accounts", userId, "memberships"), where("userId", "==", userId)),
       (snapshot) => {
         accountMemberships = snapshot.docs.map((memberSnapshot) => ({ id: memberSnapshot.id, ...memberSnapshot.data() }) as GroupMember);
         emit();
       },
-      () => {
-        accountMemberships = [];
-        emit();
-      }
+      handleFirestoreError(onError)
     );
 
     const authUnsubscribe = onSnapshot(
@@ -241,15 +238,12 @@ export function subscribeUserMemberships(
     );
 
     const walletProfileUnsubscribe = onSnapshot(
-      query(collection(database, "walletProfiles", userId, "memberships"), orderBy("createdAt", "asc")),
+      query(collection(database, "walletProfiles", userId, "memberships"), where("userId", "==", userId)),
       (snapshot) => {
         walletProfileMemberships = snapshot.docs.map((memberSnapshot) => ({ id: memberSnapshot.id, ...memberSnapshot.data() }) as GroupMember);
         emit();
       },
-      () => {
-        walletProfileMemberships = [];
-        emit();
-      }
+      handleFirestoreError(onError)
     );
 
     const walletUserUnsubscribe = onSnapshot(
