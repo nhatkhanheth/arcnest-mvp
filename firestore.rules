@@ -78,6 +78,14 @@ service cloud.firestore {
         && request.resource.data.role == get(accountMembershipPath(request.resource.data.userId, request.resource.data.memberId)).data.role;
     }
 
+    function isWalletIndexedMember() {
+      return signedIn()
+        && (
+          (resource.data.userId is string && resource.data.userId.matches('^wallet_[a-fA-F0-9]{40}$'))
+          || (resource.data.walletAddress is string && resource.data.walletAddress.matches('^0x[a-fA-F0-9]{40}$'))
+        );
+    }
+
     function isInviteAccessCreate(groupId) {
       return isInviteJoin(groupId);
     }
@@ -118,7 +126,7 @@ service cloud.firestore {
     }
 
     match /{path=**}/members/{memberId} {
-      allow read: if signedIn() && resource.data.authUserId == request.auth.uid;
+      allow read: if signedIn() && (resource.data.authUserId == request.auth.uid || isWalletIndexedMember());
     }
 
     match /invites/{inviteId} {

@@ -197,17 +197,25 @@ export function subscribeActiveGroupId(userId: string, onActiveGroupId: (activeG
 export function subscribeUserMemberships(
   userId: string,
   authUserId: string | undefined,
+  walletAddress: string | undefined,
   onMemberships: (memberships: GroupMember[]) => void,
   onError?: FirestoreFailureHandler
 ) {
   const database = getFirestoreOrThrow();
+  const normalizedWalletAddress = walletAddress?.toLowerCase();
+  const filterRelevantMemberships = (memberships: GroupMember[]) =>
+    memberships.filter(
+      (member) => member.userId === userId || Boolean(normalizedWalletAddress && member.walletAddress?.toLowerCase() === normalizedWalletAddress)
+    );
 
   if (authUserId) {
     let accountMemberships: GroupMember[] = [];
     let authMemberships: GroupMember[] = [];
+    let walletUserMemberships: GroupMember[] = [];
+    let walletAddressMemberships: GroupMember[] = [];
 
     const emit = () => {
-      onMemberships(mergeMemberships(accountMemberships, authMemberships).filter((member) => member.userId === userId));
+      onMemberships(filterRelevantMemberships(mergeMemberships(accountMemberships, authMemberships, walletUserMemberships, walletAddressMemberships)));
     };
 
     const accountUnsubscribe = onSnapshot(
@@ -231,9 +239,37 @@ export function subscribeUserMemberships(
       handleFirestoreError(onError)
     );
 
+    const walletUserUnsubscribe = onSnapshot(
+      query(collectionGroup(database, "members"), where("userId", "==", userId)),
+      (snapshot) => {
+        walletUserMemberships = snapshot.docs.map((memberSnapshot) => ({ id: memberSnapshot.id, ...memberSnapshot.data() }) as GroupMember);
+        emit();
+      },
+      () => {
+        walletUserMemberships = [];
+        emit();
+      }
+    );
+
+    const walletAddressUnsubscribe = normalizedWalletAddress
+      ? onSnapshot(
+          query(collectionGroup(database, "members"), where("walletAddress", "==", walletAddress)),
+          (snapshot) => {
+            walletAddressMemberships = snapshot.docs.map((memberSnapshot) => ({ id: memberSnapshot.id, ...memberSnapshot.data() }) as GroupMember);
+            emit();
+          },
+          () => {
+            walletAddressMemberships = [];
+            emit();
+          }
+        )
+      : noopUnsubscribe;
+
     return () => {
       accountUnsubscribe();
       authUnsubscribe();
+      walletUserUnsubscribe();
+      walletAddressUnsubscribe();
     };
   }
 
@@ -336,6 +372,15 @@ export async function restoreMemberAccessForAuth(member: GroupMember, authUserId
     }),
     { merge: true }
   );
+}
+
+export async function persistAccountMembership(member: GroupMember) {
+  if (!member.userId) {
+    return;
+  }
+
+  const database = getFirestoreOrThrow();
+  await setDoc(doc(database, "accounts", member.userId, "memberships", member.id), stripUndefined(member), { merge: true });
 }
 
 export async function persistGroupBundle({
@@ -522,8 +567,7 @@ async function persistAccountMembershipBestEffort(member: GroupMember) {
   }
 
   try {
-    const database = getFirestoreOrThrow();
-    await setDoc(doc(database, "accounts", member.userId, "memberships", member.id), stripUndefined(member), { merge: true });
+    await persistAccountMembership(member);
   } catch {
     // Wallet-indexed memberships restore data after cache clears; they should not block invite/group writes.
   }

@@ -38,6 +38,7 @@ import {
   createMember,
   getCurrentMember,
   getGroupById,
+  persistAccountMembership,
   persistBalanceSnapshot,
   persistGroup,
   persistGroupBundle,
@@ -266,6 +267,7 @@ export function connectGroupStoreToFirebase(profile?: FirebaseUserProfile) {
   membershipsUnsubscribe = subscribeUserMemberships(
     accountUserId,
     profile.id,
+    profile.primaryWalletAddress,
     (memberships) => {
       const activeMemberships = memberships.filter((member) => member.status === "active" || member.status === "invited");
       const groupIds = Array.from(new Set(activeMemberships.map((member) => member.groupId)));
@@ -303,7 +305,12 @@ export function resetGroupStoreSession() {
 }
 
 async function restoreAuthAccessThenSubscribe(memberships: GroupMember[], authUserId: string, groupIds: string[]) {
-  await Promise.all(memberships.map((member) => restoreMemberAccessForAuth(member, authUserId)));
+  await Promise.all(
+    memberships.map(async (member) => {
+      await persistAccountMembership(member).catch(() => undefined);
+      await restoreMemberAccessForAuth(member, authUserId).catch(() => undefined);
+    })
+  );
   syncGroupSubscriptions(groupIds);
   setSyncStatus({ mode: "firebase", loading: false, error: undefined });
 }
