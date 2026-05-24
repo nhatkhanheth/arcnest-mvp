@@ -307,7 +307,7 @@ export function resetGroupStoreSession() {
 async function restoreAuthAccessThenSubscribe(memberships: GroupMember[], authUserId: string, groupIds: string[]) {
   await Promise.all(
     memberships.map(async (member) => {
-      await persistAccountMembership(member).catch(() => undefined);
+      await persistAccountMembership(member);
       await restoreMemberAccessForAuth(member, authUserId).catch(() => undefined);
     })
   );

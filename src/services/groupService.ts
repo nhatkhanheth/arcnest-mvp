@@ -210,12 +210,13 @@ export function subscribeUserMemberships(
 
   if (authUserId) {
     let accountMemberships: GroupMember[] = [];
+    let walletProfileMemberships: GroupMember[] = [];
     let authMemberships: GroupMember[] = [];
     let walletUserMemberships: GroupMember[] = [];
     let walletAddressMemberships: GroupMember[] = [];
 
     const emit = () => {
-      onMemberships(filterRelevantMemberships(mergeMemberships(accountMemberships, authMemberships, walletUserMemberships, walletAddressMemberships)));
+      onMemberships(filterRelevantMemberships(mergeMemberships(accountMemberships, walletProfileMemberships, authMemberships, walletUserMemberships, walletAddressMemberships)));
     };
 
     const accountUnsubscribe = onSnapshot(
@@ -237,6 +238,18 @@ export function subscribeUserMemberships(
         emit();
       },
       handleFirestoreError(onError)
+    );
+
+    const walletProfileUnsubscribe = onSnapshot(
+      query(collection(database, "walletProfiles", userId, "memberships"), orderBy("createdAt", "asc")),
+      (snapshot) => {
+        walletProfileMemberships = snapshot.docs.map((memberSnapshot) => ({ id: memberSnapshot.id, ...memberSnapshot.data() }) as GroupMember);
+        emit();
+      },
+      () => {
+        walletProfileMemberships = [];
+        emit();
+      }
     );
 
     const walletUserUnsubscribe = onSnapshot(
@@ -267,6 +280,7 @@ export function subscribeUserMemberships(
 
     return () => {
       accountUnsubscribe();
+      walletProfileUnsubscribe();
       authUnsubscribe();
       walletUserUnsubscribe();
       walletAddressUnsubscribe();
@@ -380,7 +394,11 @@ export async function persistAccountMembership(member: GroupMember) {
   }
 
   const database = getFirestoreOrThrow();
-  await setDoc(doc(database, "accounts", member.userId, "memberships", member.id), stripUndefined(member), { merge: true });
+  const payload = stripUndefined(member);
+  await Promise.all([
+    setDoc(doc(database, "accounts", member.userId, "memberships", member.id), payload, { merge: true }),
+    setDoc(doc(database, "walletProfiles", member.userId, "memberships", member.id), payload, { merge: true })
+  ]);
 }
 
 export async function persistGroupBundle({
@@ -566,9 +584,18 @@ async function persistAccountMembershipBestEffort(member: GroupMember) {
     return;
   }
 
+  const database = getFirestoreOrThrow();
+  const payload = stripUndefined(member);
+
   try {
-    await persistAccountMembership(member);
+    await setDoc(doc(database, "walletProfiles", member.userId, "memberships", member.id), payload, { merge: true });
   } catch {
-    // Wallet-indexed memberships restore data after cache clears; they should not block invite/group writes.
+    // Wallet profile memberships restore data after cache clears; they should not block invite/group writes.
+  }
+
+  try {
+    await setDoc(doc(database, "accounts", member.userId, "memberships", member.id), payload, { merge: true });
+  } catch {
+    // Legacy account memberships are best-effort because older rules may not allow this path yet.
   }
 }

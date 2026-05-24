@@ -125,6 +125,12 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /walletProfiles/{accountUserId}/memberships/{membershipId} {
+      allow read: if signedIn() && resource.data.userId == accountUserId;
+      allow create, update: if signedIn() && request.resource.data.userId == accountUserId;
+      allow delete: if false;
+    }
+
     match /{path=**}/members/{memberId} {
       allow read: if signedIn() && (resource.data.authUserId == request.auth.uid || isWalletIndexedMember());
     }
