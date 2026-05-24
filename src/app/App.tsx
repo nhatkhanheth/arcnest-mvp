@@ -186,16 +186,31 @@ export function App() {
     const previous = previousWalletAddress.current;
     previousWalletAddress.current = primaryWallet.address;
 
-    if (isWalletSessionActive(settings, connection) && primaryWallet.address && primaryWallet.address !== previous) {
-      setStoredSessionMode("wallet");
-      setSessionMode("wallet");
-      commitRoute({ tab: "home" }, { replace: true });
-
-      if (!onboardingComplete || appLock.locked) {
-        completeOnboarding();
-      }
+    if (!isWalletSessionActive(settings, connection) || !primaryWallet.address) {
+      return;
     }
-  }, [appLock.locked, connection.address, connection.isConnected, onboardingComplete, primaryWallet.address, primaryWallet.status, settings.walletConnected]);
+
+    const walletChanged = Boolean(previous && previous !== primaryWallet.address);
+    const shouldEnterApp = sessionMode !== "wallet" || !onboardingComplete || appLock.locked || walletChanged;
+
+    if (!shouldEnterApp) {
+      return;
+    }
+
+    setStoredSessionMode("wallet");
+    setSessionMode("wallet");
+    commitRoute({ tab: "home" }, { replace: true });
+    completeOnboarding();
+  }, [
+    appLock.locked,
+    connection.address,
+    connection.isConnected,
+    onboardingComplete,
+    primaryWallet.address,
+    primaryWallet.status,
+    sessionMode,
+    settings.walletConnected
+  ]);
 
   useEffect(() => {
     if (!isWalletSessionActive(settings, connection)) {
