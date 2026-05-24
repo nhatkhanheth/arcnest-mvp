@@ -216,7 +216,10 @@ export function subscribeUserMemberships(
         accountMemberships = snapshot.docs.map((memberSnapshot) => ({ id: memberSnapshot.id, ...memberSnapshot.data() }) as GroupMember);
         emit();
       },
-      handleFirestoreError(onError)
+      () => {
+        accountMemberships = [];
+        emit();
+      }
     );
 
     const authUnsubscribe = onSnapshot(
@@ -316,11 +319,9 @@ export async function persistMember(member: GroupMember) {
   if (member.authUserId) {
     batch.set(doc(database, "users", member.authUserId, "memberships", member.id), stripUndefined(member), { merge: true });
   }
-  if (member.userId) {
-    batch.set(doc(database, "accounts", member.userId, "memberships", member.id), stripUndefined(member), { merge: true });
-  }
 
   await batch.commit();
+  await persistAccountMembershipBestEffort(member);
 }
 
 export async function restoreMemberAccessForAuth(member: GroupMember, authUserId: string) {
@@ -370,9 +371,6 @@ export async function persistGroupBundle({
   if (ownerMember.authUserId) {
     batch.set(doc(database, "users", ownerMember.authUserId, "memberships", ownerMember.id), stripUndefined(ownerMember), { merge: true });
   }
-  if (ownerMember.userId) {
-    batch.set(doc(database, "accounts", ownerMember.userId, "memberships", ownerMember.id), stripUndefined(ownerMember), { merge: true });
-  }
   batch.set(
     doc(database, "invites", inviteCode),
     stripUndefined({
@@ -409,6 +407,7 @@ export async function persistGroupBundle({
   );
 
   await batch.commit();
+  await persistAccountMembershipBestEffort(ownerMember);
 }
 
 export async function softRemoveMember(member: GroupMember, now = Date.now()) {
@@ -515,4 +514,17 @@ function createMemberAccessRecord(member: GroupMember) {
 
 function getMemberAccessIds(member: GroupMember) {
   return member.authUserId ? [member.authUserId] : [];
+}
+
+async function persistAccountMembershipBestEffort(member: GroupMember) {
+  if (!member.userId) {
+    return;
+  }
+
+  try {
+    const database = getFirestoreOrThrow();
+    await setDoc(doc(database, "accounts", member.userId, "memberships", member.id), stripUndefined(member), { merge: true });
+  } catch {
+    // Wallet-indexed memberships restore data after cache clears; they should not block invite/group writes.
+  }
 }

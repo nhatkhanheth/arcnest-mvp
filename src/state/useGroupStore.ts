@@ -546,7 +546,15 @@ function syncRemoteBalanceSnapshot(groupId: string) {
 }
 
 function runRemote(task: () => Promise<unknown>) {
-  if (!remoteUserId) {
+  if (!remoteUserId && !state.currentUser.authUserId) {
+    return;
+  }
+
+  void task().catch(setRemoteError);
+}
+
+function runRemoteWithAuth(task: () => Promise<unknown>) {
+  if (!remoteUserId && !state.currentUser.authUserId) {
     return;
   }
 
@@ -632,6 +640,26 @@ function getInviteGroupPlaceholder(invite: InviteRecord, now = Date.now()): Grou
     createdAt: invite.createdAt ?? now,
     updatedAt: invite.updatedAt ?? now
   };
+}
+
+async function getInviteByCodeWithRetry(inviteCode: string) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const invite = await getInviteByCode(inviteCode);
+
+    if (invite || attempt === 4) {
+      return invite;
+    }
+
+    await wait(700);
+  }
+
+  return undefined;
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
 }
 
 function isLocalOnlyGroupId(groupId?: string) {
@@ -1243,31 +1271,35 @@ const actions = {
     let groupId = state.inviteCodes[inviteCode];
     let group = state.groups.find((item) => item.id === groupId && item.status === "active");
 
-    if (remoteUserId) {
-      invite = await getInviteByCode(inviteCode);
+    try {
+      invite = await getInviteByCodeWithRetry(inviteCode);
+    } catch {
+      if (!group) {
+        return { ok: false, message: "Invite sync is not ready. Reconnect your wallet and try again." };
+      }
+    }
 
-      if (invite) {
-        const inviteStatus = getInviteResolvedStatus(invite);
+    if (invite) {
+      const inviteStatus = getInviteResolvedStatus(invite);
 
-        if (inviteStatus === "expired") {
-          const expiredInvite: InviteRecord = { ...invite, status: "expired", updatedAt: Date.now() };
-          runRemote(() => persistInvite(expiredInvite));
-          return { ok: false, message: "Invite expired" };
-        }
+      if (inviteStatus === "expired") {
+        const expiredInvite: InviteRecord = { ...invite, status: "expired", updatedAt: Date.now() };
+        runRemote(() => persistInvite(expiredInvite));
+        return { ok: false, message: "Invite expired" };
+      }
 
-        if (inviteStatus === "revoked") {
-          return { ok: false, message: "Invite revoked." };
-        }
+      if (inviteStatus === "revoked") {
+        return { ok: false, message: "Invite revoked." };
+      }
 
-        groupId = invite.groupId;
-        group = state.groups.find((item) => item.id === groupId && item.status === "active");
+      groupId = invite.groupId;
+      group = state.groups.find((item) => item.id === groupId && item.status === "active");
 
-        if (!group) {
-          try {
-            group = (await getGroupById(invite.groupId)) ?? getInviteGroupPlaceholder(invite);
-          } catch {
-            group = getInviteGroupPlaceholder(invite);
-          }
+      if (!group) {
+        try {
+          group = (await getGroupById(invite.groupId)) ?? getInviteGroupPlaceholder(invite);
+        } catch {
+          group = getInviteGroupPlaceholder(invite);
         }
       }
     }
@@ -1349,7 +1381,7 @@ const actions = {
       activities: sortActivities([inviteActivity, activity, ...current.activities])
     }));
 
-    runRemote(async () => {
+    runRemoteWithAuth(async () => {
       await persistMember(member);
       await persistActivity(activity);
       await persistActivity(inviteActivity);
