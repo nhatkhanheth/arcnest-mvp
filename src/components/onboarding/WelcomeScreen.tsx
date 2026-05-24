@@ -1,4 +1,4 @@
-import { ExternalLink, LockKeyhole, QrCode, ReceiptText, ShieldAlert, Users, Wallet } from "lucide-react";
+import { ExternalLink, LockKeyhole, ShieldAlert, Wallet } from "lucide-react";
 import { useState } from "react";
 import { dynamicEnabled } from "../../lib/dynamic";
 import { getWalletRuntime, openMetaMaskDeepLink } from "../../lib/mobileWallet";
@@ -18,13 +18,6 @@ type WelcomeScreenProps = {
   onUnlockApp?: (passcode: string) => void;
 };
 
-const features = [
-  { label: "Create or join groups", icon: <Users size={18} /> },
-  { label: "Split expenses", icon: <ReceiptText size={18} /> },
-  { label: "Pay with testnet wallet", icon: <Wallet size={18} /> },
-  { label: "QR Pay and invite", icon: <QrCode size={18} /> }
-];
-
 export function WelcomeScreen({
   onContinueDemo,
   appLocked,
@@ -38,16 +31,16 @@ export function WelcomeScreen({
   const [showDynamic, setShowDynamic] = useState(false);
   const [passcode, setPasscode] = useState("");
   const walletRuntime = getWalletRuntime();
+  const shortPreviousWallet = previousWalletAddress ? `${previousWalletAddress.slice(0, 6)}...${previousWalletAddress.slice(-4)}` : undefined;
 
   return (
-    <main className="screen-pad space-y-5">
-      <header className="pt-5">
-        <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-[22px] border border-[var(--border-soft)] bg-[var(--arc-soft)]">
+    <main className="screen-pad flex min-h-dvh flex-col justify-center space-y-5 py-[calc(28px+env(safe-area-inset-top))]">
+      <header className="text-left">
+        <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-[20px] border border-[var(--border-soft)] bg-[var(--arc-soft)]">
           <span className="font-display text-xl font-bold">A</span>
         </div>
-        <p className="text-sm font-semibold text-[var(--text-muted)]">Sign in to</p>
         <h1 className="font-display text-[40px] font-bold leading-tight">ArcNest</h1>
-        <p className="mt-2 text-lg text-[var(--text-secondary)]">Connect a test wallet to load your groups and payments.</p>
+        <p className="mt-2 text-base text-[var(--text-secondary)]">Shared payments for everyday life.</p>
       </header>
 
       <Card>
@@ -64,31 +57,39 @@ export function WelcomeScreen({
 
       <div className="space-y-3">
         {appLocked && hasLocalPasscode ? (
-          <div className="space-y-3">
+          <form
+            className="space-y-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              onUnlockApp?.(passcode);
+            }}
+          >
             <Input
-              label="App passcode"
+              label="Passcode"
               type="password"
               inputMode="numeric"
+              autoComplete="current-password"
               value={passcode}
-              onChange={(event) => setPasscode(event.target.value)}
-              placeholder="Enter local passcode"
+              onChange={(event) => setPasscode(event.target.value.replace(/\s/g, ""))}
+              placeholder="Enter passcode"
+              className="number text-center text-lg tracking-[0.18em]"
             />
             {unlockError ? (
               <div className="rounded-[18px] border border-[var(--warning)]/40 bg-[var(--warning)]/10 p-4 text-sm text-[var(--warning)]">
                 {unlockError}
               </div>
             ) : null}
-            <Button fullWidth size="lg" icon={<LockKeyhole size={18} />} onClick={() => onUnlockApp?.(passcode)}>
-              Unlock App
+            <Button fullWidth size="lg" type="submit" icon={<LockKeyhole size={18} />}>
+              Enter ArcNest
             </Button>
-          </div>
+          </form>
         ) : null}
         <Button fullWidth size="lg" icon={<Wallet size={18} />} onClick={() => setShowWalletConnect(true)}>
-          Connect Wallet
+          {hasPreviousWallet && shortPreviousWallet ? `Continue with ${shortPreviousWallet}` : "Login with Wallet"}
         </Button>
         {hasPreviousWallet ? (
-          <div className="surface-row rounded-[18px] p-3 text-sm text-[var(--text-secondary)]">
-            Previous wallet: <span className="number">{previousWalletAddress ? `${previousWalletAddress.slice(0, 6)}...${previousWalletAddress.slice(-4)}` : "Saved wallet"}</span>
+          <div className="px-1 text-center text-xs text-[var(--text-muted)]">
+            {shortPreviousWallet ? `Reconnect wallet ${shortPreviousWallet} or choose another wallet.` : "Reconnect your saved wallet or choose another wallet."}
           </div>
         ) : null}
         {walletRuntime.isMobile && !walletRuntime.isInMetaMask ? (
@@ -96,9 +97,10 @@ export function WelcomeScreen({
             Open in MetaMask
           </Button>
         ) : null}
-        <Button fullWidth size="lg" variant="secondary" onClick={onContinueDemo}>
-          Continue Demo Mode
+        <Button fullWidth size="lg" variant="ghost" onClick={onContinueDemo}>
+          Preview App
         </Button>
+        <p className="text-center text-xs text-[var(--text-muted)]">Demo mode is local only.</p>
         {dynamicEnabled ? (
           <Button fullWidth size="lg" variant="muted" icon={<Wallet size={18} />} onClick={() => setShowDynamic(true)}>
             Embedded wallet
@@ -117,33 +119,6 @@ export function WelcomeScreen({
           <DynamicEmbeddedWalletPanel />
         </div>
       ) : null}
-
-      <section className="grid gap-3">
-        {!dynamicEnabled ? <ComingSoonCard title="Embedded wallet" detail="Hidden until VITE_DYNAMIC_ENVIRONMENT_ID is configured." /> : null}
-      </section>
-
-      <section className="grid grid-cols-2 gap-2">
-        {features.map((feature) => (
-          <div key={feature.label} className="surface-row min-h-[68px] rounded-[18px] p-3 opacity-80">
-            <span className="mb-2 flex h-7 w-7 items-center justify-center rounded-xl bg-[var(--arc-soft)]">{feature.icon}</span>
-            <p className="text-xs font-semibold leading-snug">{feature.label}</p>
-          </div>
-        ))}
-      </section>
     </main>
-  );
-}
-
-function ComingSoonCard({ title, detail }: { title: string; detail: string }) {
-  return (
-    <div className="surface-row flex items-center gap-3 rounded-[18px] p-4 opacity-75">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-[var(--row-bg)]">
-        <LockKeyhole size={16} />
-      </span>
-      <span className="min-w-0">
-        <span className="block font-semibold">{title}</span>
-        <span className="block text-sm text-[var(--text-muted)]">{detail}</span>
-      </span>
-    </div>
   );
 }

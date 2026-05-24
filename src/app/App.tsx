@@ -30,13 +30,14 @@ import { USDC_VND_RATE } from "../services/balanceService";
 type QRMode = "scan" | "myqr" | "payload" | "invite";
 type GroupOpenContext = { expenseId?: string; paymentId?: string };
 type RouteState = { tab: NavTab; groupId?: string; expenseId?: string; paymentId?: string };
-type AppLockState = { enabled: boolean; passcodeHash?: string; locked: boolean };
+type AppLockState = { enabled: boolean; passcodeHash?: string; locked: boolean; timeoutMinutes: number; lastActiveAt?: number };
 type PasscodeResult = { ok: boolean; message?: string };
 type SessionMode = "none" | "wallet" | "demo";
 const onboardingStorageKey = "arcnest_onboarding_completed";
 const navStorageKey = "arcnest_last_route_v1";
 const appLockStorageKey = "arcnest_app_lock_v1";
 const sessionStorageKey = "arcnest_session_mode_v1";
+const defaultAutoLockMinutes = 15;
 
 export function App() {
   const {
@@ -85,6 +86,9 @@ export function App() {
   const [appLock, setAppLock] = useState<AppLockState>(() => getStoredAppLockState());
   const [unlockError, setUnlockError] = useState<string>();
   const previousWalletAddress = useRef(primaryWallet.address);
+  const appConnectionKey = useRef<string>();
+  const appConnectionAddress = useRef<string>();
+  const appLockActivitySavedAt = useRef(0);
   const pendingInviteCode = useRef<string | undefined>(getInitialInviteCode());
 
   useEffect(() => {
@@ -105,7 +109,41 @@ export function App() {
   }, [authState.profile]);
 
   useEffect(() => {
-    if (!authState.profile || sessionMode !== "wallet" || !isWalletSessionActive(settings)) {
+    if (!connection.isConnected || !connection.address) {
+      if (connection.isDisconnected && appConnectionAddress.current) {
+        settings.disconnectConnectedWallet(appConnectionAddress.current);
+        appConnectionAddress.current = undefined;
+        appConnectionKey.current = undefined;
+      }
+      return;
+    }
+
+    const connectionKey = [connection.address, connection.chainId, connection.connector?.id].join(":");
+
+    if (appConnectionKey.current === connectionKey) {
+      return;
+    }
+
+    appConnectionKey.current = connectionKey;
+    appConnectionAddress.current = connection.address;
+    settings.upsertConnectedWallet({
+      address: connection.address,
+      chainId: connection.chainId,
+      connectorId: connection.connector?.id,
+      connectorName: connection.connector?.name
+    });
+  }, [
+    connection.address,
+    connection.chainId,
+    connection.connector?.id,
+    connection.connector?.name,
+    connection.isConnected,
+    connection.isDisconnected,
+    settings
+  ]);
+
+  useEffect(() => {
+    if (!authState.profile || sessionMode !== "wallet" || !isWalletSessionActive(settings, connection)) {
       if (sessionMode !== "demo") {
         resetGroupStoreSession();
       }
@@ -116,19 +154,23 @@ export function App() {
       ...authState.profile,
       primaryWalletAddress: primaryWallet.address
     });
-  }, [authState.profile, primaryWallet.address, primaryWallet.status, sessionMode, settings.walletConnected]);
+  }, [authState.profile, connection.address, connection.isConnected, primaryWallet.address, primaryWallet.status, sessionMode, settings.walletConnected]);
 
   useEffect(() => {
-    if (!isWalletSessionActive(settings)) {
+    if (!isWalletSessionActive(settings, connection)) {
       setWalletBalance({ balanceUSDC: "0", balanceVND: 0 });
       return;
     }
 
     setPrimaryWalletAddress(primaryWallet.address);
-  }, [primaryWallet.address, primaryWallet.status, setPrimaryWalletAddress, setWalletBalance, settings.walletConnected]);
+  }, [connection.address, connection.isConnected, primaryWallet.address, primaryWallet.status, setPrimaryWalletAddress, setWalletBalance, settings.walletConnected]);
 
   useEffect(() => {
-    if (sessionMode !== "wallet" || isWalletSessionActive(settings)) {
+    if (sessionMode !== "wallet" || isWalletSessionActive(settings, connection)) {
+      return;
+    }
+
+    if (connection.isConnected && connection.address) {
       return;
     }
 
@@ -138,13 +180,13 @@ export function App() {
     setStoredOnboardingComplete(false);
     setOnboardingComplete(false);
     commitRoute({ tab: "home" }, { replace: true });
-  }, [primaryWallet.address, primaryWallet.status, sessionMode, settings.walletConnected]);
+  }, [connection.address, connection.isConnected, primaryWallet.address, primaryWallet.status, sessionMode, settings.walletConnected]);
 
   useEffect(() => {
     const previous = previousWalletAddress.current;
     previousWalletAddress.current = primaryWallet.address;
 
-    if (isWalletSessionActive(settings) && primaryWallet.address && primaryWallet.address !== previous) {
+    if (isWalletSessionActive(settings, connection) && primaryWallet.address && primaryWallet.address !== previous) {
       setStoredSessionMode("wallet");
       setSessionMode("wallet");
       commitRoute({ tab: "home" }, { replace: true });
@@ -153,10 +195,10 @@ export function App() {
         completeOnboarding();
       }
     }
-  }, [appLock.locked, onboardingComplete, primaryWallet.address, primaryWallet.status, settings.walletConnected]);
+  }, [appLock.locked, connection.address, connection.isConnected, onboardingComplete, primaryWallet.address, primaryWallet.status, settings.walletConnected]);
 
   useEffect(() => {
-    if (!isWalletSessionActive(settings)) {
+    if (!isWalletSessionActive(settings, connection)) {
       return;
     }
 
@@ -183,7 +225,7 @@ export function App() {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [primaryWallet.address, primaryWallet.status, setWalletBalance, settings.walletConnected]);
+  }, [connection.address, connection.isConnected, primaryWallet.address, primaryWallet.status, setWalletBalance, settings.walletConnected]);
 
   useEffect(() => {
     if (!onboardingComplete || !pendingInviteCode.current) {
@@ -194,6 +236,45 @@ export function App() {
     setJoinOpen(true);
     pendingInviteCode.current = undefined;
   }, [onboardingComplete]);
+
+  useEffect(() => {
+    if (!appLock.enabled || appLock.locked || !settings.autoLockWallet) {
+      return;
+    }
+
+    const timeoutMs = appLock.timeoutMinutes * 60_000;
+
+    function lockIfExpired() {
+      const lastActiveAt = appLock.lastActiveAt ?? Date.now();
+      if (Date.now() - lastActiveAt >= timeoutMs) {
+        updateAppLock({ ...appLock, locked: true });
+      }
+    }
+
+    function markActive() {
+      const now = Date.now();
+      if (now - appLockActivitySavedAt.current < 30_000) {
+        return;
+      }
+
+      appLockActivitySavedAt.current = now;
+      updateAppLock({ ...appLock, lastActiveAt: now, locked: false });
+    }
+
+    const interval = window.setInterval(lockIfExpired, 15_000);
+    window.addEventListener("pointerdown", markActive);
+    window.addEventListener("keydown", markActive);
+    window.addEventListener("touchstart", markActive, { passive: true });
+    window.addEventListener("visibilitychange", lockIfExpired);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("pointerdown", markActive);
+      window.removeEventListener("keydown", markActive);
+      window.removeEventListener("touchstart", markActive);
+      window.removeEventListener("visibilitychange", lockIfExpired);
+    };
+  }, [appLock, settings.autoLockWallet]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -372,7 +453,7 @@ export function App() {
     setUnlockError(undefined);
 
     if (appLock.enabled && appLock.locked) {
-      updateAppLock({ ...appLock, locked: false });
+      updateAppLock({ ...appLock, locked: false, lastActiveAt: Date.now() });
     }
   }
 
@@ -430,8 +511,12 @@ export function App() {
   }
 
   function updateAppLock(nextLock: AppLockState) {
-    setStoredAppLockState(nextLock);
-    setAppLock(nextLock);
+    const normalizedLock = {
+      ...nextLock,
+      timeoutMinutes: normalizeAutoLockMinutes(nextLock.timeoutMinutes)
+    };
+    setStoredAppLockState(normalizedLock);
+    setAppLock(normalizedLock);
   }
 
   function unlockApp(passcode: string) {
@@ -448,7 +533,7 @@ export function App() {
     setStoredOnboardingComplete(true);
     setOnboardingComplete(true);
     setUnlockError(undefined);
-    updateAppLock({ ...appLock, locked: false });
+    updateAppLock({ ...appLock, locked: false, lastActiveAt: Date.now() });
   }
 
   function enableAppLock(passcode: string): PasscodeResult {
@@ -460,7 +545,9 @@ export function App() {
     updateAppLock({
       enabled: true,
       passcodeHash: hashPasscode(passcode),
-      locked: false
+      locked: false,
+      timeoutMinutes: appLock.timeoutMinutes || defaultAutoLockMinutes,
+      lastActiveAt: Date.now()
     });
     return { ok: true, message: "App Lock enabled." };
   }
@@ -482,7 +569,9 @@ export function App() {
     updateAppLock({
       enabled: true,
       passcodeHash: hashPasscode(nextPasscode),
-      locked: false
+      locked: false,
+      timeoutMinutes: appLock.timeoutMinutes || defaultAutoLockMinutes,
+      lastActiveAt: Date.now()
     });
     return { ok: true, message: "Passcode changed." };
   }
@@ -495,15 +584,25 @@ export function App() {
     updateAppLock({
       enabled: false,
       passcodeHash: undefined,
-      locked: false
+      locked: false,
+      timeoutMinutes: appLock.timeoutMinutes || defaultAutoLockMinutes,
+      lastActiveAt: undefined
     });
     return { ok: true, message: "App Lock disabled." };
+  }
+
+  function setAppLockTimeoutMinutes(timeoutMinutes: number) {
+    updateAppLock({
+      ...appLock,
+      timeoutMinutes,
+      lastActiveAt: Date.now()
+    });
   }
 
   const qrGroup = groups.find((group) => group.id === activeGroupId) ?? groups[0];
   const qrInviteCode = qrGroup ? Object.entries(inviteCodes).find(([, groupId]) => groupId === qrGroup.id)?.[0] : undefined;
   const activePayment = paymentId ? payments.find((payment) => payment.id === paymentId) : undefined;
-  const walletSessionActive = isWalletSessionActive(settings);
+  const walletSessionActive = isWalletSessionActive(settings, connection);
   const entryRequired = (appLock.enabled && appLock.locked) || sessionMode === "none" || (sessionMode === "wallet" && !walletSessionActive);
 
   const showGlobalActions = !selectedGroupId && activeTab !== "activity";
@@ -649,6 +748,7 @@ export function App() {
         open={settingsOpen}
         wallet={wallet}
         appLockEnabled={appLock.enabled}
+        appLockTimeoutMinutes={appLock.timeoutMinutes}
         firebaseUid={authState.profile?.id}
         userKey={currentUser.id}
         syncLabel={getSyncLabel(authState, firebaseSync)}
@@ -658,6 +758,7 @@ export function App() {
         onEnableAppLock={enableAppLock}
         onChangeAppPasscode={changeAppPasscode}
         onDisableAppLock={disableAppLock}
+        onSetAppLockTimeout={setAppLockTimeoutMinutes}
         onClose={() => setSettingsOpen(false)}
         onResetOnboarding={resetOnboarding}
       />
@@ -708,8 +809,15 @@ function setStoredSessionMode(mode: SessionMode) {
   window.localStorage.setItem(sessionStorageKey, mode);
 }
 
-function isWalletSessionActive(settings: ReturnType<typeof useSettingsStore>) {
-  return settings.walletConnected && settings.primaryWallet.status === "active" && Boolean(settings.primaryWallet.address);
+function isWalletSessionActive(settings: ReturnType<typeof useSettingsStore>, connection?: ReturnType<typeof useConnection>) {
+  const walletAddress = settings.primaryWallet.address.toLowerCase();
+  const settingsActive = settings.walletConnected && settings.primaryWallet.status === "active" && Boolean(walletAddress);
+
+  if (!settingsActive || !connection) {
+    return settingsActive;
+  }
+
+  return Boolean(connection.isConnected && connection.address && connection.address.toLowerCase() === walletAddress);
 }
 
 function getInitialRouteState(): RouteState {
@@ -823,25 +931,30 @@ function getStoredRouteState() {
 
 function getStoredAppLockState(): AppLockState {
   if (typeof window === "undefined") {
-    return { enabled: false, locked: false };
+    return { enabled: false, locked: false, timeoutMinutes: defaultAutoLockMinutes };
   }
 
   try {
     const raw = window.localStorage.getItem(appLockStorageKey);
     if (!raw) {
-      return { enabled: false, locked: false };
+      return { enabled: false, locked: false, timeoutMinutes: defaultAutoLockMinutes };
     }
 
     const parsed = JSON.parse(raw) as Partial<AppLockState>;
     const enabled = Boolean(parsed.enabled && parsed.passcodeHash);
+    const timeoutMinutes = normalizeAutoLockMinutes(parsed.timeoutMinutes);
+    const lastActiveAt = typeof parsed.lastActiveAt === "number" ? parsed.lastActiveAt : Date.now();
+    const timedOut = enabled && Date.now() - lastActiveAt >= timeoutMinutes * 60_000;
 
     return {
       enabled,
       passcodeHash: typeof parsed.passcodeHash === "string" ? parsed.passcodeHash : undefined,
-      locked: enabled
+      locked: Boolean(enabled && (parsed.locked || timedOut)),
+      timeoutMinutes,
+      lastActiveAt
     };
   } catch {
-    return { enabled: false, locked: false };
+    return { enabled: false, locked: false, timeoutMinutes: defaultAutoLockMinutes };
   }
 }
 
@@ -859,6 +972,10 @@ function validatePasscode(passcode: string): PasscodeResult {
   }
 
   return { ok: true };
+}
+
+function normalizeAutoLockMinutes(value: unknown) {
+  return typeof value === "number" && [5, 10, 15, 20, 30, 45, 60].includes(value) ? value : defaultAutoLockMinutes;
 }
 
 function hashPasscode(passcode: string) {

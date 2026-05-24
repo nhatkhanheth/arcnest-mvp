@@ -514,5 +514,5 @@ function createMemberAccessRecord(member: GroupMember) {
 }
 
 function getMemberAccessIds(member: GroupMember) {
-  return Array.from(new Set([member.authUserId, member.userId].filter(Boolean) as string[]));
+  return member.authUserId ? [member.authUserId] : [];
 }

@@ -32,6 +32,7 @@ type SettingsSheetProps = {
   open: boolean;
   wallet: WalletModel;
   appLockEnabled: boolean;
+  appLockTimeoutMinutes: number;
   firebaseUid?: string;
   userKey: string;
   syncLabel: string;
@@ -41,6 +42,7 @@ type SettingsSheetProps = {
   onEnableAppLock: (passcode: string) => { ok: boolean; message?: string };
   onChangeAppPasscode: (currentPasscode: string, nextPasscode: string) => { ok: boolean; message?: string };
   onDisableAppLock: (passcode: string) => { ok: boolean; message?: string };
+  onSetAppLockTimeout: (minutes: number) => void;
   onClose: () => void;
   onResetOnboarding: () => void;
 };
@@ -65,11 +67,13 @@ const splitModes: Array<{ value: SettingsSplitMode; label: string }> = [
   { value: "custom", label: "Custom" },
   { value: "treasury", label: "Treasury" }
 ];
+const autoLockTimeoutOptions = [5, 10, 15, 20, 30, 45, 60];
 
 export function SettingsSheet({
   open,
   wallet,
   appLockEnabled,
+  appLockTimeoutMinutes,
   firebaseUid,
   userKey,
   syncLabel,
@@ -79,6 +83,7 @@ export function SettingsSheet({
   onEnableAppLock,
   onChangeAppPasscode,
   onDisableAppLock,
+  onSetAppLockTimeout,
   onClose,
   onResetOnboarding
 }: SettingsSheetProps) {
@@ -144,7 +149,6 @@ export function SettingsSheet({
             </div>
           ) : null}
           <ActionRow label="Backup wallet" detail="Coming soon. Never enter seed phrases or private keys here." />
-          <ToggleRow label="Auto-lock wallet" enabled={settings.autoLockWallet} onToggle={() => settings.toggle("autoLockWallet")} />
           <div className="surface-row rounded-[18px] p-4 text-sm text-[var(--text-secondary)]">
             External wallets only for this MVP. ArcNest never asks for a seed phrase or private key.
           </div>
@@ -205,7 +209,7 @@ export function SettingsSheet({
         </SettingsSection>
 
         <SettingsSection icon={<ShieldCheck size={18} />} title="Privacy & Security">
-          <ToggleRow label="Auto-lock wallet" enabled={settings.autoLockWallet} onToggle={() => settings.toggle("autoLockWallet")} />
+          <ToggleRow label="Auto-lock app" enabled={settings.autoLockWallet} onToggle={() => settings.toggle("autoLockWallet")} />
           <ToggleRow label="Require confirmation before payment" enabled={settings.requirePaymentConfirmation} onToggle={() => settings.toggle("requirePaymentConfirmation")} />
           <ToggleRow label="Hide small balances" enabled={settings.hideSmallBalances} onToggle={() => settings.toggle("hideSmallBalances")} />
           <ToggleRow
@@ -220,6 +224,16 @@ export function SettingsSheet({
             onChange={onChangeAppPasscode}
             onDisable={onDisableAppLock}
           />
+          <Select label="Require passcode after" value={String(appLockTimeoutMinutes)} onChange={(event) => onSetAppLockTimeout(Number(event.target.value))}>
+            {autoLockTimeoutOptions.map((minutes) => (
+              <option key={minutes} value={minutes}>
+                {minutes} minutes
+              </option>
+            ))}
+          </Select>
+          <div className="surface-row rounded-[18px] p-4 text-sm text-[var(--text-secondary)]">
+            App Lock is local to this device. Reloading will stay unlocked until this timer expires or you log out.
+          </div>
           <Button fullWidth variant="muted" icon={<RotateCcw size={16} />} onClick={onResetOnboarding}>
             Reset onboarding
           </Button>
