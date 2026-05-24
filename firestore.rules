@@ -18,6 +18,10 @@ service cloud.firestore {
       return /databases/$(database)/documents/groups/$(groupId)/members/$(memberId);
     }
 
+    function accountMembershipPath(accountUserId, memberId) {
+      return /databases/$(database)/documents/accounts/$(accountUserId)/memberships/$(memberId);
+    }
+
     function isGroupMember(groupId) {
       return signedIn() && exists(memberAccessPath(groupId, request.auth.uid));
     }
@@ -61,6 +65,17 @@ service cloud.firestore {
       return signedIn()
         && request.resource.data.authUserId == request.auth.uid
         && request.resource.data.role == 'owner';
+    }
+
+    function isWalletAccessRestore(groupId) {
+      return signedIn()
+        && request.resource.data.authUserId == request.auth.uid
+        && request.resource.data.userId is string
+        && request.resource.data.memberId is string
+        && exists(accountMembershipPath(request.resource.data.userId, request.resource.data.memberId))
+        && get(accountMembershipPath(request.resource.data.userId, request.resource.data.memberId)).data.groupId == groupId
+        && get(accountMembershipPath(request.resource.data.userId, request.resource.data.memberId)).data.status in ['active', 'invited']
+        && request.resource.data.role == get(accountMembershipPath(request.resource.data.userId, request.resource.data.memberId)).data.role;
     }
 
     function isInviteAccessCreate(groupId) {
@@ -139,8 +154,10 @@ service cloud.firestore {
         allow read: if isSelf(userId) || canManageMembers(groupId);
         allow create: if canManageMembers(groupId)
           || (isSelf(userId) && isOwnerAccessCreate())
-          || (isSelf(userId) && isInviteAccessCreate(groupId));
-        allow update: if canManageMembers(groupId);
+          || (isSelf(userId) && isInviteAccessCreate(groupId))
+          || (isSelf(userId) && isWalletAccessRestore(groupId));
+        allow update: if canManageMembers(groupId)
+          || (isSelf(userId) && isWalletAccessRestore(groupId));
         allow delete: if false;
       }
 

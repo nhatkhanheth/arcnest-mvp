@@ -305,9 +305,7 @@ export async function persistMember(member: GroupMember) {
   const batch = writeBatch(database);
   batch.set(doc(database, "groups", member.groupId, "members", member.id), stripUndefined(member), { merge: true });
 
-  const accessId = member.authUserId ?? member.userId;
-
-  if (accessId) {
+  for (const accessId of getMemberAccessIds(member)) {
     batch.set(
       doc(database, "groups", member.groupId, "memberAccess", accessId),
       createMemberAccessRecord(member),
@@ -323,6 +321,20 @@ export async function persistMember(member: GroupMember) {
   }
 
   await batch.commit();
+}
+
+export async function restoreMemberAccessForAuth(member: GroupMember, authUserId: string) {
+  const database = getFirestoreOrThrow();
+
+  await setDoc(
+    doc(database, "groups", member.groupId, "memberAccess", authUserId),
+    createMemberAccessRecord({
+      ...member,
+      authUserId,
+      updatedAt: Date.now()
+    }),
+    { merge: true }
+  );
 }
 
 export async function persistGroupBundle({
@@ -348,8 +360,7 @@ export async function persistGroupBundle({
 
   batch.set(doc(database, "groups", group.id), stripUndefined(group), { merge: true });
   batch.set(doc(database, "groups", group.id, "members", ownerMember.id), stripUndefined(ownerMember), { merge: true });
-  const ownerAccessId = ownerMember.authUserId ?? ownerMember.userId;
-  if (ownerAccessId) {
+  for (const ownerAccessId of getMemberAccessIds(ownerMember)) {
     batch.set(
       doc(database, "groups", group.id, "memberAccess", ownerAccessId),
       createMemberAccessRecord(ownerMember),
@@ -500,4 +511,8 @@ function createMemberAccessRecord(member: GroupMember) {
     inviteCode: member.inviteCode,
     updatedAt: member.updatedAt
   });
+}
+
+function getMemberAccessIds(member: GroupMember) {
+  return Array.from(new Set([member.authUserId, member.userId].filter(Boolean) as string[]));
 }

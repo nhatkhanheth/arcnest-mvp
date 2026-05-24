@@ -10,6 +10,7 @@ import {
   Info,
   Languages,
   Lock,
+  LogOut,
   Moon,
   RotateCcw,
   ShieldCheck,
@@ -31,6 +32,12 @@ type SettingsSheetProps = {
   open: boolean;
   wallet: WalletModel;
   appLockEnabled: boolean;
+  firebaseUid?: string;
+  userKey: string;
+  syncLabel: string;
+  lastSyncAt?: number;
+  onLogout: () => void;
+  onResetLocalUiCache: () => void;
   onEnableAppLock: (passcode: string) => { ok: boolean; message?: string };
   onChangeAppPasscode: (currentPasscode: string, nextPasscode: string) => { ok: boolean; message?: string };
   onDisableAppLock: (passcode: string) => { ok: boolean; message?: string };
@@ -63,6 +70,12 @@ export function SettingsSheet({
   open,
   wallet,
   appLockEnabled,
+  firebaseUid,
+  userKey,
+  syncLabel,
+  lastSyncAt,
+  onLogout,
+  onResetLocalUiCache,
   onEnableAppLock,
   onChangeAppPasscode,
   onDisableAppLock,
@@ -210,6 +223,22 @@ export function SettingsSheet({
           <Button fullWidth variant="muted" icon={<RotateCcw size={16} />} onClick={onResetOnboarding}>
             Reset onboarding
           </Button>
+        </SettingsSection>
+
+        <SettingsSection icon={<Info size={18} />} title="Session & Sync">
+          <InfoRow label="Current wallet" value={activeWallet.address ? shortAddress(activeWallet.address) : "No wallet"} mono />
+          <InfoRow label="Firebase uid" value={firebaseUid ? shortAddress(firebaseUid) : "Local mode"} mono />
+          <InfoRow label="User key" value={userKey ? shortAddress(userKey) : "No user"} mono />
+          <InfoRow label="Sync status" value={syncLabel} supporting={lastSyncAt ? `Checked ${new Date(lastSyncAt).toLocaleTimeString()}` : undefined} />
+          <Button fullWidth variant="secondary" icon={<LogOut size={16} />} onClick={onLogout}>
+            Logout / Disconnect
+          </Button>
+          <Button fullWidth variant="muted" icon={<RotateCcw size={16} />} onClick={onResetLocalUiCache}>
+            Reset local UI cache
+          </Button>
+          <div className="surface-row rounded-[18px] p-4 text-sm text-[var(--text-secondary)]">
+            These actions only clear this browser session. Firestore groups, expenses, payments, and activities are not deleted.
+          </div>
         </SettingsSection>
 
         <SettingsSection icon={<SlidersHorizontal size={18} />} title="Group Defaults">

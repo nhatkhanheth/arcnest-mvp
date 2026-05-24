@@ -43,6 +43,7 @@ import {
   persistGroupBundle,
   persistMember,
   roleOptionsForActor,
+  restoreMemberAccessForAuth,
   softRemoveMember as softRemoveMemberRemote,
   subscribeBalanceSnapshot,
   subscribeGroup,
@@ -232,6 +233,11 @@ function persistState(nextState: ArcNestState) {
     return;
   }
 
+  if (syncStatus.mode === "firebase" || nextState.currentUser.id.startsWith("wallet_") || nextState.currentUser.authUserId) {
+    window.localStorage.removeItem(storageKey);
+    return;
+  }
+
   window.localStorage.setItem(storageKey, JSON.stringify(nextState));
 }
 
@@ -276,11 +282,30 @@ export function connectGroupStoreToFirebase(profile?: FirebaseUserProfile) {
         return;
       }
 
-      syncGroupSubscriptions(groupIds);
-      setSyncStatus({ mode: "firebase", loading: false, error: undefined });
+      void restoreAuthAccessThenSubscribe(activeMemberships, profile.id, groupIds).catch(setRemoteError);
     },
     setRemoteError
   );
+}
+
+export function resetGroupStoreSession() {
+  membershipsUnsubscribe?.();
+  membershipsUnsubscribe = undefined;
+  clearGroupSubscriptions();
+  remoteUserId = undefined;
+  remoteAuthUserId = undefined;
+  setSyncStatus({ mode: "local", loading: false, error: undefined });
+  setState(() => initialState);
+
+  if (typeof window !== "undefined") {
+    window.localStorage.removeItem(storageKey);
+  }
+}
+
+async function restoreAuthAccessThenSubscribe(memberships: GroupMember[], authUserId: string, groupIds: string[]) {
+  await Promise.all(memberships.map((member) => restoreMemberAccessForAuth(member, authUserId)));
+  syncGroupSubscriptions(groupIds);
+  setSyncStatus({ mode: "firebase", loading: false, error: undefined });
 }
 
 function migrateToFirebaseUser(profile: FirebaseUserProfile, accountUserId: string) {

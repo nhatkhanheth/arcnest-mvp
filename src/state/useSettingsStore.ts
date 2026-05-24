@@ -416,6 +416,27 @@ const actions = {
     if (changedWallet) {
       syncRemoteWallet(changedWallet);
     }
+  },
+  disconnectAllWallets() {
+    let wallets: LocalWallet[] = [];
+    setState((current) => {
+      wallets = current.wallets.map((wallet) => ({
+        ...wallet,
+        status: "disconnected" as const
+      }));
+
+      return {
+        ...current,
+        wallets,
+        activeWalletId: "",
+        walletConnected: false
+      };
+    });
+    syncRemoteSettings();
+    syncRemoteWallets(wallets);
+  },
+  resetLocalUiState() {
+    setState(() => initialState);
   }
 };
 

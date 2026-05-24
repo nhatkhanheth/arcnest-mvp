@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useConnection, useDisconnect } from "wagmi";
 import { GlobalHeaderActions } from "../components/app/GlobalHeaderActions";
 import { SettingsSheet } from "../components/settings/SettingsSheet";
 import { BottomNav } from "../components/ui/BottomNav";
@@ -19,7 +20,7 @@ import { HomePage } from "../pages/HomePage";
 import { SplitPage } from "../pages/SplitPage";
 import { WalletPage } from "../pages/WalletPage";
 import { useGroupStore } from "../state/useGroupStore";
-import { connectGroupStoreToFirebase } from "../state/useGroupStore";
+import { connectGroupStoreToFirebase, resetGroupStoreSession } from "../state/useGroupStore";
 import { startAuthStore, useAuthStore } from "../state/useAuthStore";
 import { useSettingsStore } from "../state/useSettingsStore";
 import { connectSettingsStoreToFirebase } from "../state/useSettingsStore";
@@ -31,9 +32,11 @@ type GroupOpenContext = { expenseId?: string; paymentId?: string };
 type RouteState = { tab: NavTab; groupId?: string; expenseId?: string; paymentId?: string };
 type AppLockState = { enabled: boolean; passcodeHash?: string; locked: boolean };
 type PasscodeResult = { ok: boolean; message?: string };
+type SessionMode = "none" | "wallet" | "demo";
 const onboardingStorageKey = "arcnest_onboarding_completed";
 const navStorageKey = "arcnest_last_route_v1";
 const appLockStorageKey = "arcnest_app_lock_v1";
+const sessionStorageKey = "arcnest_session_mode_v1";
 
 export function App() {
   const {
@@ -55,7 +58,10 @@ export function App() {
     switchActiveGroup
   } = useGroupStore();
   const authState = useAuthStore();
-  const { theme, setTheme, reducedMotion, primaryWallet } = useSettingsStore();
+  const settings = useSettingsStore();
+  const { theme, setTheme, reducedMotion, primaryWallet } = settings;
+  const connection = useConnection();
+  const { disconnectAsync } = useDisconnect();
   const initialRoute = useRef<RouteState>(getInitialRouteState());
   const [activeTab, setActiveTab] = useState<NavTab>(initialRoute.current.tab);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(initialRoute.current.groupId ?? null);
@@ -75,6 +81,7 @@ export function App() {
   const [qrMode, setQRMode] = useState<QRMode>("scan");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [onboardingComplete, setOnboardingComplete] = useState(() => getStoredOnboardingComplete());
+  const [sessionMode, setSessionMode] = useState<SessionMode>(() => getStoredSessionMode());
   const [appLock, setAppLock] = useState<AppLockState>(() => getStoredAppLockState());
   const [unlockError, setUnlockError] = useState<string>();
   const previousWalletAddress = useRef(primaryWallet.address);
@@ -94,34 +101,62 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    connectGroupStoreToFirebase(authState.profile);
     connectSettingsStoreToFirebase(authState.profile);
   }, [authState.profile]);
 
   useEffect(() => {
-    if (!primaryWallet.address) {
+    if (!authState.profile || sessionMode !== "wallet" || !isWalletSessionActive(settings)) {
+      if (sessionMode !== "demo") {
+        resetGroupStoreSession();
+      }
+      return;
+    }
+
+    connectGroupStoreToFirebase({
+      ...authState.profile,
+      primaryWalletAddress: primaryWallet.address
+    });
+  }, [authState.profile, primaryWallet.address, primaryWallet.status, sessionMode, settings.walletConnected]);
+
+  useEffect(() => {
+    if (!isWalletSessionActive(settings)) {
       setWalletBalance({ balanceUSDC: "0", balanceVND: 0 });
       return;
     }
 
     setPrimaryWalletAddress(primaryWallet.address);
-  }, [primaryWallet.address, setPrimaryWalletAddress, setWalletBalance]);
+  }, [primaryWallet.address, primaryWallet.status, setPrimaryWalletAddress, setWalletBalance, settings.walletConnected]);
+
+  useEffect(() => {
+    if (sessionMode !== "wallet" || isWalletSessionActive(settings)) {
+      return;
+    }
+
+    resetGroupStoreSession();
+    setStoredSessionMode("none");
+    setSessionMode("none");
+    setStoredOnboardingComplete(false);
+    setOnboardingComplete(false);
+    commitRoute({ tab: "home" }, { replace: true });
+  }, [primaryWallet.address, primaryWallet.status, sessionMode, settings.walletConnected]);
 
   useEffect(() => {
     const previous = previousWalletAddress.current;
     previousWalletAddress.current = primaryWallet.address;
 
-    if (primaryWallet.address && primaryWallet.address !== previous) {
+    if (isWalletSessionActive(settings) && primaryWallet.address && primaryWallet.address !== previous) {
+      setStoredSessionMode("wallet");
+      setSessionMode("wallet");
       commitRoute({ tab: "home" }, { replace: true });
 
       if (!onboardingComplete || appLock.locked) {
         completeOnboarding();
       }
     }
-  }, [appLock.locked, onboardingComplete, primaryWallet.address]);
+  }, [appLock.locked, onboardingComplete, primaryWallet.address, primaryWallet.status, settings.walletConnected]);
 
   useEffect(() => {
-    if (!primaryWallet.address) {
+    if (!isWalletSessionActive(settings)) {
       return;
     }
 
@@ -148,7 +183,7 @@ export function App() {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [primaryWallet.address, setWalletBalance]);
+  }, [primaryWallet.address, primaryWallet.status, setWalletBalance, settings.walletConnected]);
 
   useEffect(() => {
     if (!onboardingComplete || !pendingInviteCode.current) {
@@ -341,6 +376,53 @@ export function App() {
     }
   }
 
+  function startDemoSession() {
+    resetGroupStoreSession();
+    setStoredSessionMode("demo");
+    setSessionMode("demo");
+    completeOnboarding();
+    commitRoute({ tab: "home" }, { replace: true });
+  }
+
+  async function logout() {
+    try {
+      if (connection.isConnected) {
+        await disconnectAsync();
+      }
+    } catch {
+      // Local logout should still complete even if the wallet connector is already gone.
+    }
+
+    settings.disconnectAllWallets();
+    resetGroupStoreSession();
+    setStoredSessionMode("none");
+    setSessionMode("none");
+    setStoredOnboardingComplete(false);
+    setOnboardingComplete(false);
+    setPaymentOpen(false);
+    setSendOpen(false);
+    setQROpen(false);
+    setSettingsOpen(false);
+    commitRoute({ tab: "home" }, { replace: true });
+
+    if (appLock.enabled) {
+      updateAppLock({ ...appLock, locked: true });
+    }
+  }
+
+  function resetLocalUiCache() {
+    settings.resetLocalUiState();
+    resetGroupStoreSession();
+    setStoredSessionMode("none");
+    setStoredOnboardingComplete(false);
+    window.localStorage.removeItem(navStorageKey);
+    window.localStorage.removeItem("arcnest-local-state-v4");
+    setSessionMode("none");
+    setOnboardingComplete(false);
+    setSettingsOpen(false);
+    commitRoute({ tab: "home" }, { replace: true });
+  }
+
   function resetOnboarding() {
     setStoredOnboardingComplete(false);
     setOnboardingComplete(false);
@@ -421,10 +503,12 @@ export function App() {
   const qrGroup = groups.find((group) => group.id === activeGroupId) ?? groups[0];
   const qrInviteCode = qrGroup ? Object.entries(inviteCodes).find(([, groupId]) => groupId === qrGroup.id)?.[0] : undefined;
   const activePayment = paymentId ? payments.find((payment) => payment.id === paymentId) : undefined;
+  const walletSessionActive = isWalletSessionActive(settings);
+  const entryRequired = (appLock.enabled && appLock.locked) || sessionMode === "none" || (sessionMode === "wallet" && !walletSessionActive);
 
   const showGlobalActions = !selectedGroupId && activeTab !== "activity";
 
-  if (!onboardingComplete || (appLock.enabled && appLock.locked)) {
+  if (entryRequired || !onboardingComplete) {
     return (
       <div className="app-shell">
         <div className="mobile-frame">
@@ -434,10 +518,12 @@ export function App() {
                 setUnlockError("Unlock App first, or reconnect your wallet to reset the local session.");
                 return;
               }
-              completeOnboarding();
+              startDemoSession();
             }}
             appLocked={appLock.enabled && appLock.locked}
             hasLocalPasscode={Boolean(appLock.passcodeHash)}
+            previousWalletAddress={settings.wallets[0]?.address}
+            hasPreviousWallet={settings.wallets.length > 0}
             unlockError={unlockError}
             onUnlockApp={unlockApp}
           />
@@ -563,6 +649,12 @@ export function App() {
         open={settingsOpen}
         wallet={wallet}
         appLockEnabled={appLock.enabled}
+        firebaseUid={authState.profile?.id}
+        userKey={currentUser.id}
+        syncLabel={getSyncLabel(authState, firebaseSync)}
+        lastSyncAt={Date.now()}
+        onLogout={() => void logout()}
+        onResetLocalUiCache={resetLocalUiCache}
         onEnableAppLock={enableAppLock}
         onChangeAppPasscode={changeAppPasscode}
         onDisableAppLock={disableAppLock}
@@ -592,6 +684,32 @@ function setStoredOnboardingComplete(complete: boolean) {
   }
 
   window.localStorage.removeItem(onboardingStorageKey);
+}
+
+function getStoredSessionMode(): SessionMode {
+  if (typeof window === "undefined") {
+    return "none";
+  }
+
+  const value = window.localStorage.getItem(sessionStorageKey);
+  return value === "wallet" || value === "demo" ? value : "none";
+}
+
+function setStoredSessionMode(mode: SessionMode) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (mode === "none") {
+    window.localStorage.removeItem(sessionStorageKey);
+    return;
+  }
+
+  window.localStorage.setItem(sessionStorageKey, mode);
+}
+
+function isWalletSessionActive(settings: ReturnType<typeof useSettingsStore>) {
+  return settings.walletConnected && settings.primaryWallet.status === "active" && Boolean(settings.primaryWallet.address);
 }
 
 function getInitialRouteState(): RouteState {

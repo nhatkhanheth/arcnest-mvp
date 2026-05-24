@@ -12,6 +12,8 @@ type WelcomeScreenProps = {
   onContinueDemo: () => void;
   appLocked?: boolean;
   hasLocalPasscode?: boolean;
+  hasPreviousWallet?: boolean;
+  previousWalletAddress?: string;
   unlockError?: string;
   onUnlockApp?: (passcode: string) => void;
 };
@@ -23,7 +25,15 @@ const features = [
   { label: "QR Pay and invite", icon: <QrCode size={18} /> }
 ];
 
-export function WelcomeScreen({ onContinueDemo, appLocked, hasLocalPasscode, unlockError, onUnlockApp }: WelcomeScreenProps) {
+export function WelcomeScreen({
+  onContinueDemo,
+  appLocked,
+  hasLocalPasscode,
+  hasPreviousWallet,
+  previousWalletAddress,
+  unlockError,
+  onUnlockApp
+}: WelcomeScreenProps) {
   const [showWalletConnect, setShowWalletConnect] = useState(false);
   const [showDynamic, setShowDynamic] = useState(false);
   const [passcode, setPasscode] = useState("");
@@ -35,19 +45,10 @@ export function WelcomeScreen({ onContinueDemo, appLocked, hasLocalPasscode, unl
         <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-[22px] border border-[var(--border-soft)] bg-[var(--arc-soft)]">
           <span className="font-display text-xl font-bold">A</span>
         </div>
-        <p className="text-sm font-semibold text-[var(--text-muted)]">Welcome to</p>
+        <p className="text-sm font-semibold text-[var(--text-muted)]">Sign in to</p>
         <h1 className="font-display text-[40px] font-bold leading-tight">ArcNest</h1>
-        <p className="mt-2 text-lg text-[var(--text-secondary)]">Shared payments for everyday life.</p>
+        <p className="mt-2 text-lg text-[var(--text-secondary)]">Connect a test wallet to load your groups and payments.</p>
       </header>
-
-      <section className="grid grid-cols-2 gap-3">
-        {features.map((feature) => (
-          <div key={feature.label} className="surface-row min-h-[92px] rounded-[20px] p-4">
-            <span className="mb-3 flex h-9 w-9 items-center justify-center rounded-2xl bg-[var(--arc-soft)]">{feature.icon}</span>
-            <p className="text-sm font-semibold leading-snug">{feature.label}</p>
-          </div>
-        ))}
-      </section>
 
       <Card>
         <div className="flex items-start gap-3">
@@ -82,17 +83,22 @@ export function WelcomeScreen({ onContinueDemo, appLocked, hasLocalPasscode, unl
             </Button>
           </div>
         ) : null}
-        <Button fullWidth size="lg" onClick={onContinueDemo}>
-          Continue in Demo Mode
+        <Button fullWidth size="lg" icon={<Wallet size={18} />} onClick={() => setShowWalletConnect(true)}>
+          Connect Wallet
         </Button>
-        <Button fullWidth size="lg" variant="secondary" icon={<Wallet size={18} />} onClick={() => setShowWalletConnect(true)}>
-          Connect Test Wallet
-        </Button>
+        {hasPreviousWallet ? (
+          <div className="surface-row rounded-[18px] p-3 text-sm text-[var(--text-secondary)]">
+            Previous wallet: <span className="number">{previousWalletAddress ? `${previousWalletAddress.slice(0, 6)}...${previousWalletAddress.slice(-4)}` : "Saved wallet"}</span>
+          </div>
+        ) : null}
         {walletRuntime.isMobile && !walletRuntime.isInMetaMask ? (
           <Button fullWidth size="lg" variant="secondary" icon={<ExternalLink size={18} />} onClick={() => openMetaMaskDeepLink()}>
             Open in MetaMask
           </Button>
         ) : null}
+        <Button fullWidth size="lg" variant="secondary" onClick={onContinueDemo}>
+          Continue Demo Mode
+        </Button>
         {dynamicEnabled ? (
           <Button fullWidth size="lg" variant="muted" icon={<Wallet size={18} />} onClick={() => setShowDynamic(true)}>
             Embedded wallet
@@ -114,7 +120,15 @@ export function WelcomeScreen({ onContinueDemo, appLocked, hasLocalPasscode, unl
 
       <section className="grid gap-3">
         {!dynamicEnabled ? <ComingSoonCard title="Embedded wallet" detail="Hidden until VITE_DYNAMIC_ENVIRONMENT_ID is configured." /> : null}
-        <ComingSoonCard title="Import wallet" detail="Not supported. ArcNest will not ask for seed phrases or private keys." />
+      </section>
+
+      <section className="grid grid-cols-2 gap-2">
+        {features.map((feature) => (
+          <div key={feature.label} className="surface-row min-h-[68px] rounded-[18px] p-3 opacity-80">
+            <span className="mb-2 flex h-7 w-7 items-center justify-center rounded-xl bg-[var(--arc-soft)]">{feature.icon}</span>
+            <p className="text-xs font-semibold leading-snug">{feature.label}</p>
+          </div>
+        ))}
       </section>
     </main>
   );
