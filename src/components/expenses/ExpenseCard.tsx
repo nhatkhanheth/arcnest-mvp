@@ -1,7 +1,8 @@
 import { ReceiptText } from "lucide-react";
 import type { Expense, GroupMember, Payment } from "../../models";
-import { formatTime, formatUSDC, formatVND } from "../../lib/format";
-import { getExpenseShareAmounts, getTreasuryMemberId, isTreasuryMemberId, toUSDC, USDC_VND_RATE } from "../../services/balanceService";
+import { formatDateLabel, formatUSDC, formatVND } from "../../lib/format";
+import { getExpenseShareAmounts, getTreasuryMemberId, toUSDC, USDC_VND_RATE } from "../../services/balanceService";
+import { getExpenseDate } from "../../services/expenseService";
 
 type ExpenseCardProps = {
   expense: Expense;
@@ -46,7 +47,7 @@ export function ExpenseCard({ expense, members, payments = [], currentMemberId, 
           </p>
         </div>
       </div>
-      <p className="mt-3 text-xs font-medium text-[var(--text-muted)]">{formatTime(expense.createdAt)}</p>
+      <p className="mt-3 text-xs font-medium text-[var(--text-muted)]">{formatDateLabel(getExpenseDate(expense), expense.createdAt)}</p>
     </button>
   );
 }
@@ -96,7 +97,7 @@ function getUserAmount(expense: Expense, currentMemberId: string | undefined, pa
   );
 
   if (paidVND >= userShareVND) {
-    return { label: "Settled", tone: "success" as const };
+    return { label: "Paid", tone: "success" as const };
   }
 
   if (hasPendingPayment) {
@@ -107,6 +108,5 @@ function getUserAmount(expense: Expense, currentMemberId: string | undefined, pa
     return { label: "Payment failed", tone: "warning" as const };
   }
 
-  const receiverLabel = isTreasuryMemberId(receiverId) ? "treasury" : "paid member";
-  return { label: `You owe ${formatUSDC(toUSDC(userShareVND))} to ${receiverLabel}`, tone: "warning" as const };
+  return { label: `You owe ${formatUSDC(toUSDC(userShareVND))}`, tone: "warning" as const };
 }

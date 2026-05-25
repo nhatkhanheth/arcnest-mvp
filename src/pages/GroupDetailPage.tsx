@@ -14,6 +14,7 @@ import { permissionPresets } from "../data/mockData";
 import { formatUSDC, formatVND, shortAddress } from "../lib/format";
 import type { Expense, GroupMember, Payment, PaymentRequest } from "../models";
 import { calculateMemberNetBalances, getExpenseShareAmounts, getTreasuryMemberId, isTreasuryMemberId, USDC_VND_RATE } from "../services/balanceService";
+import { getExpenseDate } from "../services/expenseService";
 import { canCreateExpense, canEditExpense, canInviteMembers, canManageMembers, getCurrentMember, roleOptionsForActor } from "../services/groupService";
 import { useGroupStore } from "../state/useGroupStore";
 import { useSettingsStore } from "../state/useSettingsStore";
@@ -105,8 +106,8 @@ export function GroupDetailPage({
   const selectedPayment = selectedPaymentId ? groupPayments.find((payment) => payment.id === selectedPaymentId) : undefined;
   const highlightedExpenseId = selectedExpenseId ?? selectedPayment?.expenseId;
   const selectedExpense = selectedExpenseId ? groupExpenses.find((expense) => expense.id === selectedExpenseId) : undefined;
-  const activeExpenses = groupExpenses.filter((expense) => expense.status === "active" || expense.status === "edited");
-  const archivedExpenses = groupExpenses.filter((expense) => expense.status === "voided" || expense.status === "deleted");
+  const activeExpenses = sortExpensesByDate(groupExpenses.filter((expense) => expense.status === "active" || expense.status === "edited"));
+  const archivedExpenses = sortExpensesByDate(groupExpenses.filter((expense) => expense.status === "voided" || expense.status === "deleted"));
   const needAttentionExpenses = activeExpenses.filter((expense) => expenseNeedsAttention(expense, currentMember?.id, groupPayments));
   const completedExpenses = activeExpenses.filter((expense) => !needAttentionExpenses.some((item) => item.id === expense.id));
 
@@ -209,7 +210,7 @@ export function GroupDetailPage({
 
       <Section title="Paid / Completed">
         <div className="space-y-3">
-          {completedExpenses.length > 0 ? completedExpenses.map(renderExpenseCard) : <EmptyBlock title="Completed payments will appear here" detail="Settled or informational expenses stay below unpaid items." />}
+          {completedExpenses.length > 0 ? completedExpenses.map(renderExpenseCard) : <EmptyBlock title="Completed payments will appear here" detail="Paid or informational expenses stay below unpaid items." />}
         </div>
       </Section>
 
@@ -270,7 +271,7 @@ export function GroupDetailPage({
               </div>
             ))
           ) : (
-            <EmptyBlock title="No open balances" detail="Paid or settled groups stay clear here." />
+            <EmptyBlock title="No open balances" detail="Paid or done groups stay clear here." />
           )}
         </div>
       </Card>
@@ -399,6 +400,18 @@ function expenseNeedsAttention(expense: Expense, currentMemberId: string | undef
     .reduce((total, payment) => total + Math.round(Number(payment.amountVND ?? Number(payment.amountUSDC) * USDC_VND_RATE)), 0);
 
   return paidVND < shareVND;
+}
+
+function sortExpensesByDate(expenses: Expense[]) {
+  return [...expenses].sort((a, b) => {
+    const dateDiff = getExpenseDate(b).localeCompare(getExpenseDate(a));
+
+    if (dateDiff !== 0) {
+      return dateDiff;
+    }
+
+    return b.createdAt - a.createdAt;
+  });
 }
 
 function Metric({ label, value, success, warning }: { label: string; value: string; success?: boolean; warning?: boolean }) {

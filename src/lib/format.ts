@@ -59,3 +59,17 @@ export function formatTime(timestamp: number) {
     minute: "2-digit"
   }).format(timestamp);
 }
+
+export function formatDateLabel(date: string | undefined, fallbackTimestamp?: number) {
+  const value = date ?? (fallbackTimestamp ? new Date(fallbackTimestamp).toISOString().slice(0, 10) : undefined);
+
+  if (!value) {
+    return "No date";
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric"
+  }).format(new Date(`${value}T00:00:00`));
+}

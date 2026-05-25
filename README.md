@@ -68,6 +68,10 @@ To test a real testnet transfer:
 
 ArcNest never asks for private keys or seed phrases.
 
+## Logo
+
+Visible app branding uses `public/logo.png` first, then `public/logo.jpg`, then `public/logo.jpeg`, with the built-in `A` mark as fallback. Replace `public/logo.png` and redeploy to update the login screen, Home header, and Settings branding without changing code. Installed PWA icons may require reinstalling the PWA because browsers cache app icons.
+
 ## Wallets and Mobile
 
 - MetaMask mobile opens through `https://metamask.app.link/dapp/...`.

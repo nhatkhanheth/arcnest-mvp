@@ -1,4 +1,5 @@
 import { WalletCard } from "../components/wallet/WalletCard";
+import { AppLogo } from "../components/app/AppLogo";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { PayButton } from "../components/payments/PayButton";
@@ -29,11 +30,14 @@ export function HomePage({ onOpenQR, onOpenPayment, onOpenSend, onGoHome, onOpen
   return (
     <main className="screen-pad space-y-6">
       <header className="flex items-center justify-between">
-        <div>
-          <p className="text-sm font-medium text-[var(--text-muted)]">Shared payments</p>
-          <button type="button" className="focus-ring rounded-lg text-left font-display text-[28px] font-bold" onClick={onGoHome}>
-            ArcNest
-          </button>
+        <div className="flex items-center gap-3">
+          <AppLogo size={44} rounded="rounded-[16px]" />
+          <div>
+            <p className="text-sm font-medium text-[var(--text-muted)]">Shared payments</p>
+            <button type="button" className="focus-ring rounded-lg text-left font-display text-[28px] font-bold" onClick={onGoHome}>
+              ArcNest
+            </button>
+          </div>
         </div>
       </header>
 

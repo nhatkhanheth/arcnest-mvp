@@ -2,6 +2,7 @@ import { ExternalLink, LockKeyhole, ShieldAlert, Wallet } from "lucide-react";
 import { useState } from "react";
 import { dynamicEnabled } from "../../lib/dynamic";
 import { getWalletRuntime, openMetaMaskDeepLink } from "../../lib/mobileWallet";
+import { AppLogo } from "../app/AppLogo";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { Input } from "../ui/Input";
@@ -34,18 +35,16 @@ export function WelcomeScreen({
   const shortPreviousWallet = previousWalletAddress ? `${previousWalletAddress.slice(0, 6)}...${previousWalletAddress.slice(-4)}` : undefined;
 
   return (
-    <main className="screen-pad flex min-h-dvh flex-col justify-center space-y-5 py-[calc(28px+env(safe-area-inset-top))]">
-      <header className="text-left">
-        <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-[20px] border border-[var(--border-soft)] bg-[var(--arc-soft)]">
-          <span className="font-display text-xl font-bold">A</span>
-        </div>
-        <h1 className="font-display text-[40px] font-bold leading-tight">ArcNest</h1>
+    <main className="screen-pad flex min-h-dvh flex-col justify-center space-y-5 py-[calc(28px+env(safe-area-inset-top))] text-center">
+      <header className="mx-auto max-w-[320px]">
+        <AppLogo size={76} rounded="rounded-[26px]" className="mx-auto" />
+        <h1 className="mt-5 font-display text-[42px] font-bold leading-tight">ArcNest</h1>
         <p className="mt-2 text-base text-[var(--text-secondary)]">Shared payments for everyday life.</p>
       </header>
 
-      <Card>
+      <Card className="text-left">
         <div className="flex items-start gap-3">
-          <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-[var(--warning)]/10 text-[var(--warning)]">
+          <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-[var(--arc-soft)] text-[var(--arc-accent)]">
             <ShieldAlert size={18} />
           </span>
           <div className="space-y-2 text-sm text-[var(--text-secondary)]">
@@ -55,7 +54,7 @@ export function WelcomeScreen({
         </div>
       </Card>
 
-      <div className="space-y-3">
+      <div className="space-y-3 text-left">
         {appLocked && hasLocalPasscode ? (
           <form
             className="space-y-3"
@@ -100,7 +99,7 @@ export function WelcomeScreen({
         <Button fullWidth size="lg" variant="ghost" onClick={onContinueDemo}>
           Preview App
         </Button>
-        <p className="text-center text-xs text-[var(--text-muted)]">Demo mode is local only.</p>
+        <p className="text-center text-xs text-[var(--text-muted)]">Preview App is local only.</p>
         {dynamicEnabled ? (
           <Button fullWidth size="lg" variant="muted" icon={<Wallet size={18} />} onClick={() => setShowDynamic(true)}>
             Embedded wallet
@@ -119,6 +118,8 @@ export function WelcomeScreen({
           <DynamicEmbeddedWalletPanel />
         </div>
       ) : null}
+
+      <p className="pt-2 text-center text-xs font-medium text-[var(--text-muted)]">Created by nhatkhanh.eth</p>
     </main>
   );
 }

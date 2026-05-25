@@ -1,7 +1,7 @@
 import type { Expense, ExpenseCategory, Group, GroupMember, SplitMode } from "../models";
 import { collection, doc, onSnapshot, orderBy, query, setDoc } from "firebase/firestore";
 import { getTreasuryMemberId, splitEvenly, toUSDC } from "./balanceService";
-import { getFirestoreOrThrow, handleFirestoreError, sortByCreatedAt, stripUndefined, type FirestoreFailureHandler } from "./firestoreHelpers";
+import { getFirestoreOrThrow, handleFirestoreError, stripUndefined, type FirestoreFailureHandler } from "./firestoreHelpers";
 
 export type ExpenseDraft = {
   title: string;
@@ -12,6 +12,7 @@ export type ExpenseDraft = {
   splitMode: SplitMode;
   splitAmountsVND?: Record<string, number>;
   note?: string;
+  expenseDate?: string;
 };
 
 export type ExpenseValidationResult = {
@@ -29,6 +30,10 @@ export function validateExpenseDraft(group: Group, members: GroupMember[], draft
 
   if (draft.amountVND <= 0) {
     return { valid: false, message: "Amount must be greater than zero." };
+  }
+
+  if (draft.expenseDate && !/^\d{4}-\d{2}-\d{2}$/.test(draft.expenseDate)) {
+    return { valid: false, message: "Choose a valid expense date." };
   }
 
   if (participants.length === 0) {
@@ -78,6 +83,7 @@ export function createExpenseFromDraft(group: Group, draft: ExpenseDraft, curren
     splitMode: draft.splitMode,
     splitAmountsVND: normalizeSplitAmounts(draft),
     note: draft.note?.trim() || undefined,
+    expenseDate: draft.expenseDate || getISODate(now),
     createdBy: currentUserId,
     createdAt: now,
     updatedAt: now,
@@ -97,6 +103,7 @@ export function updateExpenseFromDraft(expense: Expense, group: Group, draft: Ex
     splitMode: draft.splitMode,
     splitAmountsVND: normalizeSplitAmounts(draft),
     note: draft.note?.trim() || undefined,
+    expenseDate: draft.expenseDate || expense.expenseDate || getISODate(expense.createdAt),
     updatedAt: now,
     status: "edited"
   };
@@ -109,7 +116,7 @@ export function subscribeGroupExpenses(groupId: string, onExpenses: (expenses: E
   return onSnapshot(
     expensesQuery,
     (snapshot) => {
-      onExpenses(sortByCreatedAt(snapshot.docs.map((expenseSnapshot) => ({ id: expenseSnapshot.id, ...expenseSnapshot.data() }) as Expense)));
+      onExpenses(sortExpenses(snapshot.docs.map((expenseSnapshot) => ({ id: expenseSnapshot.id, ...expenseSnapshot.data() }) as Expense)));
     },
     handleFirestoreError(onError)
   );
@@ -138,4 +145,24 @@ function makeExpenseId(title: string, now: number) {
     .slice(0, 24);
 
   return `expense_${slug || "item"}_${now.toString(36)}`;
+}
+
+export function getExpenseDate(expense: Expense) {
+  return expense.expenseDate || getISODate(expense.createdAt);
+}
+
+export function getISODate(timestamp = Date.now()) {
+  return new Date(timestamp).toISOString().slice(0, 10);
+}
+
+function sortExpenses(expenses: Expense[]) {
+  return [...expenses].sort((a, b) => {
+    const dateDiff = getExpenseDate(b).localeCompare(getExpenseDate(a));
+
+    if (dateDiff !== 0) {
+      return dateDiff;
+    }
+
+    return (b.createdAt ?? 0) - (a.createdAt ?? 0);
+  });
 }

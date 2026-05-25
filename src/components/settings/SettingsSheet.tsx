@@ -24,6 +24,7 @@ import type { DisplayCurrency, LanguageCode, LocalWallet, SettingsSplitMode, The
 import { convertUSDCToDisplayAmount, formatUSDC, formatVND, shortAddress } from "../../lib/format";
 import { useGroupStore } from "../../state/useGroupStore";
 import { useSettingsStore } from "../../state/useSettingsStore";
+import { AppLogo } from "../app/AppLogo";
 import { Button } from "../ui/Button";
 import { Input, Select } from "../ui/Input";
 import { BottomSheet } from "../ui/Modal";
@@ -271,6 +272,13 @@ export function SettingsSheet({
         </SettingsSection>
 
         <SettingsSection icon={<Info size={18} />} title="About ArcNest">
+          <div className="surface-row flex items-center gap-3 rounded-[18px] p-4">
+            <AppLogo size={42} rounded="rounded-[15px]" />
+            <div>
+              <p className="font-display text-lg font-bold">ArcNest</p>
+              <p className="text-xs font-medium text-[var(--text-muted)]">Created by nhatkhanh.eth</p>
+            </div>
+          </div>
           <InfoRow label="App version" value="0.3.0 firebase" />
           <ActionRow label="About us" detail="Placeholder" />
           <ActionRow label="X / Twitter" detail="Placeholder" icon={<Twitter size={16} />} />

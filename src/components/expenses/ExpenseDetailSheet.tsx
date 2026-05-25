@@ -3,8 +3,9 @@ import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { Expense, Group, GroupMember, Payment, PaymentRequest, Treasury } from "../../models";
 import { getArcExplorerTxUrl } from "../../lib/arc";
-import { formatTime, formatUSDC, formatVND, shortAddress } from "../../lib/format";
+import { formatDateLabel, formatTime, formatUSDC, formatVND, shortAddress } from "../../lib/format";
 import { getExpenseShareAmounts, getTreasuryMemberId, isTreasuryMemberId, toUSDC, USDC_VND_RATE } from "../../services/balanceService";
+import { getExpenseDate } from "../../services/expenseService";
 import { Button } from "../ui/Button";
 import { BottomSheet } from "../ui/Modal";
 
@@ -74,8 +75,8 @@ export function ExpenseDetailSheet({
     const pendingPayment = relatedPayments.find((payment) => payment.status === "pending");
     const failedPayment = relatedPayments.find((payment) => payment.status === "failed");
     const cancelledPayment = relatedPayments.find((payment) => payment.status === "cancelled");
-    const settled = currentShareVND > 0 && paidAmountVND >= currentShareVND;
-    const status: "unpaid" | "pending" | "paid" | "failed" | "cancelled" = settled
+    const paid = currentShareVND > 0 && paidAmountVND >= currentShareVND;
+    const status: "unpaid" | "pending" | "paid" | "failed" | "cancelled" = paid
       ? "paid"
       : pendingPayment
         ? "pending"
@@ -88,7 +89,7 @@ export function ExpenseDetailSheet({
       currentMember &&
         involved &&
         !receiverIsCurrentUser &&
-        !settled &&
+        !paid &&
         (status === "unpaid" || status === "failed") &&
         expense.status !== "voided" &&
         expense.status !== "deleted"
@@ -108,7 +109,7 @@ export function ExpenseDetailSheet({
       pendingPayment,
       failedPayment,
       cancelledPayment,
-      settled,
+      paid,
       canPay,
       status,
       toWalletAddress
@@ -195,6 +196,7 @@ export function ExpenseDetailSheet({
 
         <DetailSection title="Split details">
           <InfoRow label="Split mode" value={activeExpense.splitMode} />
+          <InfoRow label="Expense date" value={formatDateLabel(getExpenseDate(activeExpense), activeExpense.createdAt)} />
           <InfoRow label="Created" value={formatTime(activeExpense.createdAt)} />
           <InfoRow label="Updated" value={formatTime(activeExpense.updatedAt)} />
           <InfoRow label="Created by" value={members.find((member) => member.userId === activeExpense.createdBy)?.displayName ?? "Member"} />
@@ -291,7 +293,7 @@ function getUserAmountLabel(
     currentShareUSDC: string;
     involved: boolean;
     receiverIsCurrentUser: boolean;
-    settled: boolean;
+    paid: boolean;
   }
 ) {
   if (detail.receiverIsCurrentUser) {
@@ -302,8 +304,8 @@ function getUserAmountLabel(
     return "Not included";
   }
 
-  if (detail.settled) {
-    return "Settled";
+  if (detail.paid) {
+    return "Paid";
   }
 
   return `You owe ${formatUSDC(detail.currentShareUSDC)}`;

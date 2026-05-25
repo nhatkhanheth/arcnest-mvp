@@ -4,7 +4,7 @@ import type { Expense, ExpenseCategory, ExpenseShare, Group, GroupMember, SplitM
 import { fxRate } from "../../data/mockData";
 import { formatVND } from "../../lib/format";
 import type { ExpenseDraft } from "../../services/expenseService";
-import { validateExpenseDraft } from "../../services/expenseService";
+import { getExpenseDate, getISODate, validateExpenseDraft } from "../../services/expenseService";
 import { useSettingsStore } from "../../state/useSettingsStore";
 import { Button } from "../ui/Button";
 import { Input, Select, TextArea } from "../ui/Input";
@@ -33,6 +33,7 @@ export function AddExpenseSheet({ open, group, members, expense, onClose, onSave
   const [title, setTitle] = useState("Dinner after tennis");
   const [amountVND, setAmountVND] = useState(980000);
   const [category, setCategory] = useState<ExpenseCategory>("Food");
+  const [expenseDate, setExpenseDate] = useState(getISODate());
   const [paidBy, setPaidBy] = useState(members[0]?.id ?? "");
   const [participants, setParticipants] = useState<string[]>(members.map((member) => member.id));
   const [splitMode, setSplitMode] = useState<SplitMode>("equal");
@@ -58,6 +59,7 @@ export function AddExpenseSheet({ open, group, members, expense, onClose, onSave
     setTitle(expense?.title ?? "Dinner after tennis");
     setAmountVND(fallbackAmount);
     setCategory(expense?.category ?? "Food");
+    setExpenseDate(expense ? getExpenseDate(expense) : getISODate());
     setPaidBy(expense && members.some((member) => member.id === expense.paidBy) ? expense.paidBy : members[0]?.id ?? "");
     setParticipants(fallbackParticipants);
     setSplitMode(expense?.splitMode ?? defaultSplitMode);
@@ -162,6 +164,7 @@ export function AddExpenseSheet({ open, group, members, expense, onClose, onSave
       title,
       amountVND,
       category,
+      expenseDate,
       paidBy,
       participants,
       splitMode,
@@ -221,6 +224,7 @@ export function AddExpenseSheet({ open, group, members, expense, onClose, onSave
               </option>
             ))}
           </Select>
+          <Input label="Expense date" type="date" value={expenseDate} onChange={(event) => setExpenseDate(event.target.value)} />
           <Select label="Paid by" value={paidBy} onChange={(event) => setPaidBy(event.target.value)}>
             {members.map((member) => (
               <option key={member.id} value={member.id}>

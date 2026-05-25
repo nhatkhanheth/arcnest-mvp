@@ -21,6 +21,7 @@ export type Expense = {
   splitMode: SplitMode;
   splitAmountsVND?: Record<string, number>;
   note?: string;
+  expenseDate?: string;
   createdBy: string;
   createdAt: number;
   updatedAt: number;
