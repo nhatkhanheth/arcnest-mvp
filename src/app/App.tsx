@@ -631,7 +631,7 @@ export function App() {
   const walletSessionActive = isWalletSessionActive(settings, connection);
   const entryRequired = (appLock.enabled && appLock.locked) || sessionMode === "none" || (sessionMode === "wallet" && !walletSessionActive);
 
-  const showGlobalActions = !selectedGroupId && activeTab !== "activity";
+  const showGlobalActions = !selectedGroupId && activeTab !== "activity" && activeTab !== "home";
 
   if (entryRequired || !onboardingComplete) {
     return (
@@ -688,6 +688,8 @@ export function App() {
             onOpenQR={openQR}
             onOpenPayment={openPayment}
             onOpenSend={() => setSendOpen(true)}
+            onOpenSettings={() => setSettingsOpen(true)}
+            syncLabel={getSyncLabel(authState, firebaseSync)}
             onGoHome={goHome}
             onOpenGroup={openGroupDetail}
             onGoToSplit={() => changeTab("split")}

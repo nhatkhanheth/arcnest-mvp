@@ -1,8 +1,12 @@
+import { QrCode, Settings } from "lucide-react";
+import { useConnection } from "wagmi";
 import { WalletCard } from "../components/wallet/WalletCard";
 import { AppLogo } from "../components/app/AppLogo";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { PayButton } from "../components/payments/PayButton";
+import { arcNetwork, getArcPaymentMode, isWrongArcNetwork } from "../lib/arc";
+import { APP_VERSION } from "../lib/appMeta";
 import { formatDisplayAmount, formatUSDC, formatVND } from "../lib/format";
 import type { Balance, Payment, PaymentRequest } from "../models";
 import { getBalanceRecipientWallet, isTreasuryMemberId } from "../services/balanceService";
@@ -14,14 +18,21 @@ type HomePageProps = {
   onOpenQR: (mode?: "scan" | "myqr" | "payload" | "invite") => void;
   onOpenPayment: (request: PaymentRequest) => void;
   onOpenSend: () => void;
+  onOpenSettings: () => void;
+  syncLabel?: string;
   onGoHome?: () => void;
   onOpenGroup: (groupId: string, context?: { expenseId?: string; paymentId?: string }) => void;
   onGoToSplit: () => void;
 };
 
-export function HomePage({ onOpenQR, onOpenPayment, onOpenSend, onGoHome, onOpenGroup, onGoToSplit }: HomePageProps) {
+export function HomePage({ onOpenQR, onOpenPayment, onOpenSend, onOpenSettings, syncLabel, onGoHome, onOpenGroup, onGoToSplit }: HomePageProps) {
+  const connection = useConnection();
   const { balances, currentUser, globalSummary, members, groups, payments, treasuries, wallet } = useGroupStore();
   const { displayCurrency, primaryWallet } = useSettingsStore();
+  const paymentMode = getArcPaymentMode();
+  const missingConfig = arcNetwork.missingPaymentEnvVars.length > 0;
+  const wrongNetwork = paymentMode === "testnet" && connection.isConnected && isWrongArcNetwork(connection.chainId);
+  const modeLabel = wrongNetwork ? "Wrong Network" : missingConfig ? "Demo Mode" : connection.isConnected ? "Arc Testnet" : "Testnet Ready";
   const currentMemberIds = new Set(members.filter((member) => member.userId === currentUser.id).map((member) => member.id));
   const activeGroupIds = new Set(groups.filter((group) => group.status === "active").map((group) => group.id));
   const needToPay = balances.filter((balance) => activeGroupIds.has(balance.groupId) && currentMemberIds.has(balance.fromMemberId) && balance.status !== "paid");
@@ -29,15 +40,28 @@ export function HomePage({ onOpenQR, onOpenPayment, onOpenSend, onGoHome, onOpen
 
   return (
     <main className="screen-pad space-y-6">
-      <header className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <AppLogo size={44} rounded="rounded-[16px]" />
-          <div>
-            <p className="text-sm font-medium text-[var(--text-muted)]">Shared payments</p>
-            <button type="button" className="focus-ring rounded-lg text-left font-display text-[28px] font-bold" onClick={onGoHome}>
-              ArcNest
-            </button>
+      <header className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <button type="button" className="focus-ring flex min-w-0 flex-1 items-center gap-3 rounded-[18px] text-left" onClick={onGoHome}>
+            <AppLogo variant="header" />
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-medium text-[var(--text-muted)]">Shared payments</span>
+              <span className="block truncate font-display text-[28px] font-bold leading-tight">ArcNest</span>
+            </span>
+          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button aria-label="Open QR Pay" variant="muted" size="icon" className="h-10 w-10 rounded-[16px] bg-[var(--card-bg)]" onClick={() => onOpenQR("scan")}>
+              <QrCode size={18} />
+            </Button>
+            <Button aria-label="Open settings" variant="muted" size="icon" className="h-10 w-10 rounded-[16px] bg-[var(--card-bg)]" onClick={onOpenSettings}>
+              <Settings size={18} />
+            </Button>
           </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <StatusChip label={modeLabel} tone={wrongNetwork ? "warning" : missingConfig ? "muted" : "active"} />
+          {syncLabel ? <StatusChip label={syncLabel} /> : null}
+          <StatusChip label={APP_VERSION} />
         </div>
       </header>
 
@@ -121,6 +145,21 @@ export function HomePage({ onOpenQR, onOpenPayment, onOpenSend, onGoHome, onOpen
         )}
       </section>
     </main>
+  );
+}
+
+function StatusChip({ label, tone = "muted" }: { label: string; tone?: "active" | "warning" | "muted" }) {
+  return (
+    <span
+      className={[
+        "rounded-full border px-3 py-2 text-xs font-semibold",
+        tone === "active" ? "border-[var(--border-soft)] bg-[var(--arc-soft)] text-[var(--text-primary)]" : "",
+        tone === "warning" ? "border-[var(--warning)]/50 bg-[var(--warning)]/10 text-[var(--warning)]" : "",
+        tone === "muted" ? "border-[var(--border-soft)] bg-[var(--card-bg)] text-[var(--text-muted)]" : ""
+      ].join(" ")}
+    >
+      {label}
+    </span>
   );
 }
 

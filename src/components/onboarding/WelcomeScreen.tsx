@@ -52,7 +52,7 @@ export function WelcomeScreen({
     <main className="screen-pad flex min-h-dvh flex-col py-[calc(22px+env(safe-area-inset-top))] text-center">
       <section className="mx-auto flex w-full max-w-[390px] flex-1 flex-col justify-center space-y-5">
         <header className="mx-auto max-w-[330px]">
-          <AppLogo size={108} rounded="rounded-[32px]" className="mx-auto" />
+          <AppLogo variant="login" className="mx-auto" />
           <h1 className="mt-5 font-display text-[42px] font-bold leading-tight">ArcNest</h1>
           <p className="mt-2 text-base text-[var(--text-secondary)]">Shared payments for everyday life.</p>
         </header>
