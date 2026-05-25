@@ -3,7 +3,7 @@ import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { PayButton } from "../components/payments/PayButton";
 import { formatDisplayAmount, formatUSDC, formatVND } from "../lib/format";
-import type { Balance, PaymentRequest } from "../models";
+import type { Balance, Payment, PaymentRequest } from "../models";
 import { getBalanceRecipientWallet, isTreasuryMemberId } from "../services/balanceService";
 import { canPayBalance, getCurrentMember } from "../services/groupService";
 import { useGroupStore } from "../state/useGroupStore";
@@ -19,7 +19,7 @@ type HomePageProps = {
 };
 
 export function HomePage({ onOpenQR, onOpenPayment, onOpenSend, onGoHome, onOpenGroup, onGoToSplit }: HomePageProps) {
-  const { balances, currentUser, globalSummary, members, groups, treasuries, wallet } = useGroupStore();
+  const { balances, currentUser, globalSummary, members, groups, payments, treasuries, wallet } = useGroupStore();
   const { displayCurrency, primaryWallet } = useSettingsStore();
   const currentMemberIds = new Set(members.filter((member) => member.userId === currentUser.id).map((member) => member.id));
   const activeGroupIds = new Set(groups.filter((group) => group.status === "active").map((group) => group.id));
@@ -79,6 +79,7 @@ export function HomePage({ onOpenQR, onOpenPayment, onOpenSend, onGoHome, onOpen
               type="pay"
               groups={groups}
               members={members}
+              payments={payments}
               treasuries={treasuries}
               walletAddress={primaryWallet.address}
               currentUserId={currentUser.id}
@@ -102,6 +103,7 @@ export function HomePage({ onOpenQR, onOpenPayment, onOpenSend, onGoHome, onOpen
               type="receive"
               groups={groups}
               members={members}
+              payments={payments}
               treasuries={treasuries}
               walletAddress={primaryWallet.address}
               currentUserId={currentUser.id}
@@ -154,6 +156,7 @@ function BalanceRow({
   type,
   groups,
   members,
+  payments,
   treasuries,
   walletAddress,
   currentUserId,
@@ -165,6 +168,7 @@ function BalanceRow({
   type: "pay" | "receive";
   groups: ReturnType<typeof useGroupStore>["groups"];
   members: ReturnType<typeof useGroupStore>["members"];
+  payments: Payment[];
   treasuries: ReturnType<typeof useGroupStore>["treasuries"];
   walletAddress: string;
   currentUserId: string;
@@ -177,6 +181,7 @@ function BalanceRow({
   const to = members.find((member) => member.id === balance.toMemberId);
   const currentMember = group ? getCurrentMember(members, group.id, currentUserId) : undefined;
   const payAllowed = canPayBalance(currentMember);
+  const relatedPayment = getRelatedPayment(balance, payments);
   const counterparty = type === "pay" ? to : from;
   const counterpartyName = isTreasuryMemberId(balance.toMemberId) ? "Group treasury" : counterparty?.displayName ?? "Member";
   const toWalletAddress = getBalanceRecipientWallet(balance, members, treasuries);
@@ -231,10 +236,23 @@ function BalanceRow({
                 })
               }
               disabled={!payAllowed}
+              status={relatedPayment?.status}
             />
           </span>
         ) : null}
       </div>
     </div>
   );
+}
+
+function getRelatedPayment(balance: Balance, payments: Payment[]) {
+  const related = payments.filter(
+    (payment) =>
+      payment.groupId === balance.groupId &&
+      payment.fromMemberId === balance.fromMemberId &&
+      payment.toMemberId === balance.toMemberId &&
+      (payment.balanceId === balance.id || payment.expenseId === balance.expenseId)
+  );
+
+  return related.find((payment) => payment.status === "pending") ?? related.find((payment) => payment.status === "paid") ?? related.find((payment) => payment.status === "failed") ?? related[0];
 }

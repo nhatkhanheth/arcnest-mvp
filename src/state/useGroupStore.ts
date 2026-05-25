@@ -67,7 +67,10 @@ import {
   createPendingMockPayment,
   executeUSDCPayment,
   getPaymentErrorMessage,
+  checkPaymentReceiptStatus,
+  lockPaymentForAttempt,
   markPaymentCancelled,
+  markPaymentFailure,
   markPaymentFailed as markPaymentFailedModel,
   markPaymentPaid as markPaymentPaidModel,
   markPaymentPending as markPaymentPendingModel,
@@ -149,6 +152,7 @@ let remoteAuthUserId: string | undefined;
 let membershipsUnsubscribe: (() => void) | undefined;
 const groupUnsubscribes = new Map<string, Array<() => void>>();
 const seededUsers = new Set<string>();
+const pendingPaymentReceiptChecks = new Set<string>();
 
 export function useGroupStore() {
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
@@ -429,6 +433,20 @@ function replaceGroupScoped<Key extends "members" | "expenses" | "payments" | "a
     return;
   }
 
+  if (key === "payments") {
+    const payments = items as Payment[];
+
+    setState((current) => ({
+      ...current,
+      payments: [
+        ...current.payments.filter((payment) => payment.groupId !== groupId),
+        ...payments
+      ]
+    }));
+    resumePendingPaymentConfirmations(payments);
+    return;
+  }
+
   setState((current) => ({
     ...current,
     [key]: [
@@ -574,6 +592,125 @@ function runRemoteForGroup(groupId: string, task: () => Promise<unknown>) {
   }
 
   void task().catch(setRemoteError);
+}
+
+async function finalizePaidPayment(payment: Payment, txHash: string, mode: "mock" | "testnet"): Promise<ActionResult> {
+  const now = Date.now();
+  const latestPayment = state.payments.find((item) => item.id === payment.id) ?? payment;
+  const paidPayment = markPaymentPaidModel(latestPayment, now, txHash);
+  const activity = createPaymentLifecycleActivity(paidPayment, "payment_paid", now, {
+    amountUSDC: paidPayment.amountUSDC,
+    txHash: paidPayment.txHash,
+    mode
+  });
+
+  setState((current) => ({
+    ...current,
+    payments: upsertById(current.payments, paidPayment),
+    activities: sortActivities(upsertById(current.activities, activity))
+  }));
+
+  if (remoteUserId) {
+    try {
+      await persistPayment(paidPayment);
+      await persistActivity(activity);
+      syncRemoteBalanceSnapshot(paidPayment.groupId);
+    } catch (error) {
+      setRemoteError(error);
+    }
+  }
+
+  return {
+    ok: true,
+    paymentId: paidPayment.id,
+    message: mode === "mock" ? "Demo payment completed." : "Testnet payment confirmed."
+  };
+}
+
+function upsertPaymentState(payment: Payment) {
+  setState((current) => ({
+    ...current,
+    payments: upsertById(current.payments, payment)
+  }));
+}
+
+function createPaymentLifecycleActivity(payment: Payment, type: Extract<Activity["type"], "payment_started" | "payment_paid" | "payment_failed">, now: number, metadata: Record<string, unknown>) {
+  return {
+    ...createActivity(
+      {
+        groupId: payment.groupId,
+        actorUserId: state.currentUser.id,
+        actorMemberId: payment.fromMemberId,
+        type,
+        targetId: payment.id,
+        metadata
+      },
+      now
+    ),
+    id: `activity_${type}_${payment.id}`
+  };
+}
+
+function resumePendingPaymentConfirmations(payments: Payment[]) {
+  for (const payment of payments) {
+    if (payment.status !== "pending" || !payment.txHash || pendingPaymentReceiptChecks.has(payment.id)) {
+      continue;
+    }
+
+    pendingPaymentReceiptChecks.add(payment.id);
+    void checkPaymentReceiptStatus(payment)
+      .then(async (receiptStatus) => {
+        if (receiptStatus === "success" && payment.txHash) {
+          await finalizePaidPayment(payment, payment.txHash, "testnet");
+          return;
+        }
+
+        if (receiptStatus === "reverted") {
+          const now = Date.now();
+          const failedPayment = markPaymentFailure(payment, now, "Payment failed.");
+          const activity = createPaymentLifecycleActivity(failedPayment, "payment_failed", now, {
+            amountUSDC: failedPayment.amountUSDC,
+            reason: "Payment failed."
+          });
+
+          setState((current) => ({
+            ...current,
+            payments: upsertById(current.payments, failedPayment),
+            activities: sortActivities(upsertById(current.activities, activity))
+          }));
+
+          if (remoteUserId) {
+            await persistPayment(failedPayment);
+            await persistActivity(activity);
+            syncRemoteBalanceSnapshot(failedPayment.groupId);
+          }
+        }
+      })
+      .catch(setRemoteError)
+      .finally(() => {
+        pendingPaymentReceiptChecks.delete(payment.id);
+      });
+  }
+}
+
+function getExistingPaymentMessage(status: Payment["status"]) {
+  if (status === "paid") {
+    return "This payment was already paid.";
+  }
+
+  if (status === "pending") {
+    return "This payment is already being processed.";
+  }
+
+  if (status === "failed") {
+    return "Retry available.";
+  }
+
+  if (status === "cancelled") {
+    return "This payment was cancelled.";
+  }
+
+  return undefined;
 }
 
 function setRemoteActiveGroup(groupId: string) {
@@ -1710,13 +1847,16 @@ const actions = {
       (payment) =>
         payment.id === request.id ||
         (payment.balanceId === requestRecordId &&
-          (payment.status === "unpaid" || payment.status === "pending") &&
           payment.groupId === groupId &&
           payment.fromMemberId === (request.fromMemberId ?? actor?.id))
     );
 
     if (existing) {
-      return { ok: true, paymentId: existing.id };
+      return {
+        ok: true,
+        paymentId: existing.id,
+        message: getExistingPaymentMessage(existing.status)
+      };
     }
 
     const now = Date.now();
@@ -1805,112 +1945,143 @@ const actions = {
       return { ok: false, message: "Payment not found." };
     }
 
+    if (payment.status === "paid") {
+      return { ok: true, paymentId, message: "This payment was already paid." };
+    }
+
+    if (payment.status === "pending") {
+      return { ok: false, paymentId, message: "This payment is already being processed." };
+    }
+
+    if (payment.status === "cancelled") {
+      return { ok: false, paymentId, message: "This payment was cancelled and cannot be paid." };
+    }
+
+    if (payment.status === "failed" && payment.txHash) {
+      const receiptStatus = await checkPaymentReceiptStatus(payment);
+
+      if (receiptStatus === "success") {
+        return finalizePaidPayment(payment, payment.txHash, "testnet");
+      }
+
+      if (receiptStatus === "not_found") {
+        const pendingAt = Date.now();
+        const pendingPayment = markPaymentPendingModel(payment, pendingAt);
+        upsertPaymentState(pendingPayment);
+        runRemoteForGroup(payment.groupId, () => persistPayment(pendingPayment));
+        return { ok: false, paymentId, message: "Transaction submitted. Waiting for confirmation." };
+      }
+    }
+
     try {
       const pendingAt = Date.now();
-      const pendingPayment = markPaymentPendingModel(payment, pendingAt);
-      const pendingActivity = createActivity(
-        {
-          groupId: payment.groupId,
-          actorUserId: state.currentUser.id,
-          actorMemberId: payment.fromMemberId,
-          type: "payment_started",
-          targetId: payment.id,
-          metadata: {
-            amountUSDC: payment.amountUSDC,
-            status: "pending"
+      let lockedPayment = markPaymentPendingModel(payment, pendingAt);
+
+      if (remoteUserId) {
+        const lock = await lockPaymentForAttempt(payment, payment.fromWalletAddress);
+
+        if (!lock.ok) {
+          if (lock.payment) {
+            upsertPaymentState(lock.payment);
           }
-        },
-        pendingAt
-      );
+
+          return { ok: false, paymentId, message: lock.message };
+        }
+
+        lockedPayment = lock.payment;
+      } else {
+        upsertPaymentState(lockedPayment);
+      }
+
+      const pendingActivity = createPaymentLifecycleActivity(lockedPayment, "payment_started", pendingAt, {
+        amountUSDC: lockedPayment.amountUSDC,
+        status: "pending"
+      });
 
       setState((current) => ({
         ...current,
-        payments: current.payments.map((item) => (item.id === paymentId ? pendingPayment : item)),
-        activities: sortActivities([pendingActivity, ...current.activities])
+        payments: upsertById(current.payments, lockedPayment),
+        activities: sortActivities(upsertById(current.activities, pendingActivity))
       }));
 
-      runRemoteForGroup(payment.groupId, async () => {
-        await persistPayment(pendingPayment);
+      if (remoteUserId) {
         await persistActivity(pendingActivity);
-      });
+      }
 
-      const result = await executeUSDCPayment(pendingPayment, {
-        onSubmitted(txHash) {
+      const result = await executeUSDCPayment(lockedPayment, {
+        async onSubmitted(txHash) {
           const submittedAt = Date.now();
-          const latestPayment = state.payments.find((item) => item.id === paymentId) ?? pendingPayment;
-          const submittedPayment = markPaymentPendingModel(latestPayment, submittedAt, txHash);
+          const latestPayment = state.payments.find((item) => item.id === paymentId) ?? lockedPayment;
+          const submittedPayment = {
+            ...markPaymentPendingModel(latestPayment, submittedAt, txHash),
+            attemptId: lockedPayment.attemptId,
+            lockedAt: lockedPayment.lockedAt,
+            lockedByWalletAddress: lockedPayment.lockedByWalletAddress
+          };
 
-          setState((current) => ({
-            ...current,
-            payments: current.payments.map((item) => (item.id === paymentId ? submittedPayment : item))
-          }));
+          upsertPaymentState(submittedPayment);
 
-          runRemoteForGroup(submittedPayment.groupId, () => persistPayment(submittedPayment));
+          if (remoteUserId) {
+            try {
+              await persistPayment(submittedPayment);
+            } catch (error) {
+              setRemoteError(error);
+            }
+          }
         }
       });
-      const now = Date.now();
-      const latestPayment = state.payments.find((item) => item.id === paymentId) ?? payment;
-      const paidPayment = markPaymentPaidModel(latestPayment, now, result.txHash);
-      const activity = createActivity(
-        {
-          groupId: payment.groupId,
-          actorUserId: state.currentUser.id,
-          actorMemberId: payment.fromMemberId,
-          type: "payment_paid",
-          targetId: payment.id,
-          metadata: {
-            amountUSDC: payment.amountUSDC,
-            txHash: paidPayment.txHash,
-            mode: result.mode
-          }
-        },
-        now
-      );
 
-      setState((current) => ({
-        ...current,
-        payments: current.payments.map((item) => (item.id === paymentId ? paidPayment : item)),
-        activities: sortActivities([activity, ...current.activities])
-      }));
-
-      runRemoteForGroup(payment.groupId, async () => {
-        await persistPayment(paidPayment);
-        await persistActivity(activity);
-        syncRemoteBalanceSnapshot(payment.groupId);
-      });
-
-      return { ok: true, paymentId, message: result.mode === "mock" ? "Demo payment completed." : "Testnet payment confirmed." };
+      return finalizePaidPayment(state.payments.find((item) => item.id === paymentId) ?? lockedPayment, result.txHash, result.mode);
     } catch (error) {
       const now = Date.now();
       const latestPayment = state.payments.find((item) => item.id === paymentId) ?? payment;
       const failedPayment = markPaymentFailedModel(latestPayment, now);
       const message = getPaymentErrorMessage(error);
-      const activity = createActivity(
-        {
-          groupId: payment.groupId,
-          actorUserId: state.currentUser.id,
-          actorMemberId: payment.fromMemberId,
-          type: "payment_failed",
-          targetId: payment.id,
-          metadata: {
-            amountUSDC: payment.amountUSDC,
-            reason: message
+
+      if (latestPayment.txHash) {
+        const receiptStatus = await checkPaymentReceiptStatus(latestPayment);
+
+        if (receiptStatus === "success") {
+          return finalizePaidPayment(latestPayment, latestPayment.txHash, "testnet");
+        }
+
+        if (receiptStatus === "not_found") {
+          const stillPending = markPaymentPendingModel(latestPayment, now);
+          upsertPaymentState(stillPending);
+
+          if (remoteUserId) {
+            try {
+              await persistPayment(stillPending);
+            } catch (remoteError) {
+              setRemoteError(remoteError);
+            }
           }
-        },
-        now
-      );
+
+          return { ok: false, paymentId, message: "Transaction submitted. Waiting for confirmation." };
+        }
+      }
+
+      const failedWithReason = markPaymentFailure(failedPayment, now, message);
+      const activity = createPaymentLifecycleActivity(failedWithReason, "payment_failed", now, {
+        amountUSDC: failedWithReason.amountUSDC,
+        reason: message
+      });
 
       setState((current) => ({
         ...current,
-        payments: current.payments.map((item) => (item.id === paymentId ? failedPayment : item)),
-        activities: sortActivities([activity, ...current.activities])
+        payments: upsertById(current.payments, failedWithReason),
+        activities: sortActivities(upsertById(current.activities, activity))
       }));
 
-      runRemoteForGroup(payment.groupId, async () => {
-        await persistPayment(failedPayment);
-        await persistActivity(activity);
-        syncRemoteBalanceSnapshot(payment.groupId);
-      });
+      if (remoteUserId) {
+        try {
+          await persistPayment(failedWithReason);
+          await persistActivity(activity);
+          syncRemoteBalanceSnapshot(payment.groupId);
+        } catch (remoteError) {
+          setRemoteError(remoteError);
+        }
+      }
 
       return { ok: false, paymentId, message };
     }
@@ -1959,6 +2130,20 @@ const actions = {
 
     if (!payment) {
       return { ok: false, message: "Payment not found." };
+    }
+
+    if (payment.status !== "failed") {
+      return { ok: false, paymentId, message: getExistingPaymentMessage(payment.status) ?? "This payment cannot be retried." };
+    }
+
+    if (payment.txHash) {
+      const now = Date.now();
+      const pendingPayment = markPaymentPendingModel(payment, now);
+
+      upsertPaymentState(pendingPayment);
+      runRemoteForGroup(payment.groupId, () => persistPayment(pendingPayment));
+
+      return { ok: false, paymentId, message: "Transaction submitted. Waiting for confirmation." };
     }
 
     const now = Date.now();

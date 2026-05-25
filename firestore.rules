@@ -97,6 +97,8 @@ service cloud.firestore {
         && (
           get(memberPath(groupId, resource.data.fromMemberId)).data.userId == request.auth.uid
           || get(memberPath(groupId, resource.data.fromMemberId)).data.authUserId == request.auth.uid
+          || (isGroupMember(groupId)
+            && get(memberAccessPath(groupId, request.auth.uid)).data.memberId == resource.data.fromMemberId)
         );
     }
 

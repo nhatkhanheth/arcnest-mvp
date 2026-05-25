@@ -735,7 +735,10 @@ export function App() {
         }}
         onRetry={(id) => {
           setPaymentError(undefined);
-          retryPayment(id);
+          const result = retryPayment(id);
+          if (!result.ok && result.message) {
+            setPaymentError(result.message);
+          }
         }}
         onClose={() => setPaymentOpen(false)}
       />

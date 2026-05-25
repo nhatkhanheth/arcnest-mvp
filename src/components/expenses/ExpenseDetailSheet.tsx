@@ -73,16 +73,26 @@ export function ExpenseDetailSheet({
     const paidPayment = relatedPayments.find((payment) => payment.status === "paid" && payment.txHash);
     const pendingPayment = relatedPayments.find((payment) => payment.status === "pending");
     const failedPayment = relatedPayments.find((payment) => payment.status === "failed");
+    const cancelledPayment = relatedPayments.find((payment) => payment.status === "cancelled");
     const settled = currentShareVND > 0 && paidAmountVND >= currentShareVND;
+    const status: "unpaid" | "pending" | "paid" | "failed" | "cancelled" = settled
+      ? "paid"
+      : pendingPayment
+        ? "pending"
+        : failedPayment
+          ? "failed"
+          : cancelledPayment
+            ? "cancelled"
+            : "unpaid";
     const canPay = Boolean(
       currentMember &&
         involved &&
         !receiverIsCurrentUser &&
         !settled &&
+        (status === "unpaid" || status === "failed") &&
         expense.status !== "voided" &&
         expense.status !== "deleted"
     );
-    const status: "unpaid" | "pending" | "paid" | "failed" = settled ? "paid" : pendingPayment ? "pending" : failedPayment ? "failed" : "unpaid";
     const receiverName = isTreasuryMemberId(receiverMemberId) ? "Group treasury" : receiver?.displayName ?? "Member";
     const toWalletAddress = isTreasuryMemberId(receiverMemberId) ? treasury?.walletAddress ?? "" : receiver?.walletAddress ?? "";
 
@@ -97,6 +107,7 @@ export function ExpenseDetailSheet({
       paidPayment,
       pendingPayment,
       failedPayment,
+      cancelledPayment,
       settled,
       canPay,
       status,
@@ -123,6 +134,11 @@ export function ExpenseDetailSheet({
   const txUrl = activeDetail.paidPayment?.txHash ? getArcExplorerTxUrl(activeDetail.paidPayment.txHash) : undefined;
 
   function payNow() {
+    if (activeDetail.status !== "unpaid" && activeDetail.status !== "failed") {
+      setActionError(activeDetail.status === "pending" ? "This payment is already being processed." : "This payment cannot be paid again.");
+      return;
+    }
+
     if (!currentMember) {
       setActionError("Connect or join this group before paying.");
       return;
@@ -215,6 +231,7 @@ export function ExpenseDetailSheet({
           <InfoRow label="Status" value={getPaymentStatusLabel(activeDetail.status)} />
           {activeDetail.pendingPayment ? <InfoRow label="Pending" value={formatTime(activeDetail.pendingPayment.updatedAt)} /> : null}
           {activeDetail.failedPayment ? <InfoRow label="Failed" value={formatTime(activeDetail.failedPayment.updatedAt)} /> : null}
+          {activeDetail.cancelledPayment ? <InfoRow label="Cancelled" value={formatTime(activeDetail.cancelledPayment.updatedAt)} /> : null}
           {activeDetail.paidPayment?.txHash ? <InfoRow label="Tx hash" value={shortAddress(activeDetail.paidPayment.txHash)} mono /> : null}
           {txUrl ? (
             <a className="surface-row focus-ring flex min-h-[54px] items-center justify-between rounded-[18px] px-4 text-sm font-semibold" href={txUrl} target="_blank" rel="noreferrer">
@@ -233,7 +250,17 @@ export function ExpenseDetailSheet({
         <div className="grid gap-3">
           {activeDetail.canPay ? (
             <Button fullWidth icon={<WalletCards size={17} />} onClick={payNow}>
-              Pay now
+              {activeDetail.status === "failed" ? "Retry payment" : "Pay now"}
+            </Button>
+          ) : null}
+          {activeDetail.status === "pending" ? (
+            <Button fullWidth variant="secondary" icon={<WalletCards size={17} />} disabled>
+              Payment pending
+            </Button>
+          ) : null}
+          {activeDetail.status === "paid" ? (
+            <Button fullWidth variant="secondary" icon={<WalletCards size={17} />} disabled>
+              Paid
             </Button>
           ) : null}
           {canEdit ? (
@@ -282,7 +309,7 @@ function getUserAmountLabel(
   return `You owe ${formatUSDC(detail.currentShareUSDC)}`;
 }
 
-function getPaymentStatusLabel(status: "unpaid" | "pending" | "paid" | "failed") {
+function getPaymentStatusLabel(status: "unpaid" | "pending" | "paid" | "failed" | "cancelled") {
   if (status === "paid") {
     return "Paid";
   }
@@ -293,6 +320,10 @@ function getPaymentStatusLabel(status: "unpaid" | "pending" | "paid" | "failed")
 
   if (status === "failed") {
     return "Payment failed";
+  }
+
+  if (status === "cancelled") {
+    return "Cancelled";
   }
 
   return "Unpaid";

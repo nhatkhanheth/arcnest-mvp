@@ -78,9 +78,33 @@ function getUserAmount(expense: Expense, currentMemberId: string | undefined, pa
         payment.toMemberId === receiverId
     )
     .reduce((total, payment) => total + Math.round(Number(payment.amountVND ?? Number(payment.amountUSDC) * USDC_VND_RATE)), 0);
+  const hasPendingPayment = payments.some(
+    (payment) =>
+      payment.groupId === expense.groupId &&
+      payment.expenseId === expense.id &&
+      payment.status === "pending" &&
+      payment.fromMemberId === currentMemberId &&
+      payment.toMemberId === receiverId
+  );
+  const hasFailedPayment = payments.some(
+    (payment) =>
+      payment.groupId === expense.groupId &&
+      payment.expenseId === expense.id &&
+      payment.status === "failed" &&
+      payment.fromMemberId === currentMemberId &&
+      payment.toMemberId === receiverId
+  );
 
   if (paidVND >= userShareVND) {
     return { label: "Settled", tone: "success" as const };
+  }
+
+  if (hasPendingPayment) {
+    return { label: "Payment pending", tone: "muted" as const };
+  }
+
+  if (hasFailedPayment) {
+    return { label: "Payment failed", tone: "warning" as const };
   }
 
   const receiverLabel = isTreasuryMemberId(receiverId) ? "treasury" : "paid member";

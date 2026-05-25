@@ -1,7 +1,7 @@
-import { CheckCircle2, TriangleAlert, Wallet } from "lucide-react";
+import { CheckCircle2, Clock3, TriangleAlert, Wallet } from "lucide-react";
 
 type PaymentStatusProps = {
-  state: "success" | "insufficient" | "failed";
+  state: "success" | "insufficient" | "failed" | "pending";
 };
 
 export function PaymentStatus({ state }: PaymentStatusProps) {
@@ -25,6 +25,18 @@ export function PaymentStatus({ state }: PaymentStatusProps) {
         </div>
         <h3 className="mt-4 font-display text-xl font-bold">Payment failed</h3>
         <p className="mt-2 text-sm text-[var(--text-secondary)]">The transfer failed. Retry keeps balances unchanged until paid.</p>
+      </div>
+    );
+  }
+
+  if (state === "pending") {
+    return (
+      <div className="rounded-[22px] border border-[var(--arc-accent)]/45 bg-[var(--arc-soft)] p-5 text-center">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[var(--arc-accent)]/20 text-[var(--arc-accent)]">
+          <Clock3 size={28} />
+        </div>
+        <h3 className="mt-4 font-display text-xl font-bold">Payment pending</h3>
+        <p className="mt-2 text-sm text-[var(--text-secondary)]">Transaction submitted. This payment cannot be paid twice.</p>
       </div>
     );
   }

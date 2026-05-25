@@ -1,7 +1,7 @@
 import type { GroupMember, Payment, PaymentRequest } from "../models";
-import { collection, doc, onSnapshot, orderBy, query, setDoc } from "firebase/firestore";
+import { collection, doc, getDoc, onSnapshot, orderBy, query, runTransaction, setDoc } from "firebase/firestore";
 import { erc20Abi, isAddress, parseUnits, type Address, type Hash } from "viem";
-import { getConnection, waitForTransactionReceipt, writeContract } from "wagmi/actions";
+import { getConnection, getTransactionReceipt, waitForTransactionReceipt, writeContract } from "wagmi/actions";
 import { arcNetwork, getArcPaymentMode, wagmiConfig, type ArcPaymentMode } from "../lib/arc";
 import { USDC_VND_RATE } from "./balanceService";
 import { getFirestoreOrThrow, handleFirestoreError, sortByCreatedAt, stripUndefined, type FirestoreFailureHandler } from "./firestoreHelpers";
@@ -24,6 +24,20 @@ export type USDCPaymentResult = {
   mode: ArcPaymentMode;
   txHash: Hash;
 };
+
+export type PaymentLockResult =
+  | {
+      ok: true;
+      payment: Payment;
+      attemptId: string;
+    }
+  | {
+      ok: false;
+      message: string;
+      payment?: Payment;
+    };
+
+export type PaymentReceiptStatus = "success" | "reverted" | "not_found";
 
 type ExecuteUSDCPaymentOptions = {
   now?: number;
@@ -79,7 +93,13 @@ function getPaymentRecordId(requestId: string, now: number) {
     return requestId;
   }
 
-  return `payment_${now.toString(36)}`;
+  const deterministicId = requestId
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 140);
+
+  return `payment_${deterministicId || now.toString(36)}`;
 }
 
 export function markPaymentPaid(payment: Payment, now: number, txHash = generateMockTxHash(payment.id, now)): Payment {
@@ -88,8 +108,10 @@ export function markPaymentPaid(payment: Payment, now: number, txHash = generate
     txHash,
     status: "paid",
     updatedAt: now,
+    submittedAt: payment.submittedAt ?? now,
     confirmedAt: now,
-    failedAt: undefined
+    failedAt: undefined,
+    failureReason: undefined
   };
 }
 
@@ -99,8 +121,10 @@ export function markPaymentPending(payment: Payment, now: number, txHash?: Hash)
     txHash: txHash ?? payment.txHash,
     status: "pending",
     updatedAt: now,
+    submittedAt: txHash ? now : payment.submittedAt,
     failedAt: undefined,
-    confirmedAt: undefined
+    confirmedAt: undefined,
+    failureReason: undefined
   };
 }
 
@@ -157,11 +181,15 @@ export async function executeUSDCPayment(payment: Payment, options: ExecuteUSDCP
 
   await options.onSubmitted?.(txHash);
 
-  await waitForTransactionReceipt(wagmiConfig, {
+  const receipt = await waitForTransactionReceipt(wagmiConfig, {
     hash: txHash,
     chainId,
     timeout: 60_000
   });
+
+  if (receipt.status !== "success") {
+    throw new Error("Payment failed onchain.");
+  }
 
   return {
     mode: "testnet",
@@ -201,6 +229,13 @@ export function markPaymentFailed(payment: Payment, now: number): Payment {
   };
 }
 
+export function markPaymentFailure(payment: Payment, now: number, failureReason?: string): Payment {
+  return {
+    ...markPaymentFailed(payment, now),
+    failureReason
+  };
+}
+
 export function retryPayment(payment: Payment, now: number): Payment {
   return {
     ...payment,
@@ -208,7 +243,8 @@ export function retryPayment(payment: Payment, now: number): Payment {
     status: "unpaid",
     updatedAt: now,
     failedAt: undefined,
-    confirmedAt: undefined
+    confirmedAt: undefined,
+    failureReason: undefined
   };
 }
 
@@ -218,7 +254,8 @@ export function markPaymentCancelled(payment: Payment, now: number): Payment {
     status: "cancelled",
     updatedAt: now,
     failedAt: undefined,
-    confirmedAt: undefined
+    confirmedAt: undefined,
+    failureReason: undefined
   };
 }
 
@@ -239,6 +276,94 @@ export async function persistPayment(payment: Payment) {
   const database = getFirestoreOrThrow();
 
   await setDoc(doc(database, "groups", payment.groupId, "payments", payment.id), stripUndefined(payment), { merge: true });
+}
+
+export async function getPaymentRecord(groupId: string, paymentId: string) {
+  const database = getFirestoreOrThrow();
+  const snapshot = await getDoc(doc(database, "groups", groupId, "payments", paymentId));
+
+  return snapshot.exists() ? ({ id: snapshot.id, ...snapshot.data() } as Payment) : undefined;
+}
+
+export async function lockPaymentForAttempt(payment: Payment, walletAddress: string): Promise<PaymentLockResult> {
+  const database = getFirestoreOrThrow();
+  const paymentRef = doc(database, "groups", payment.groupId, "payments", payment.id);
+  const now = Date.now();
+  const attemptId = `attempt_${now.toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+
+  return runTransaction(database, async (transaction) => {
+    const snapshot = await transaction.get(paymentRef);
+    const latest = snapshot.exists() ? ({ id: snapshot.id, ...snapshot.data() } as Payment) : payment;
+
+    if (latest.status === "paid") {
+      return {
+        ok: false,
+        payment: latest,
+        message: "This payment was already paid."
+      };
+    }
+
+    if (latest.status === "pending" || latest.txHash) {
+      return {
+        ok: false,
+        payment: latest,
+        message: "This payment is already being processed."
+      };
+    }
+
+    if (latest.status === "cancelled") {
+      return {
+        ok: false,
+        payment: latest,
+        message: "This payment was cancelled and cannot be paid."
+      };
+    }
+
+    if (latest.status !== "unpaid" && latest.status !== "failed") {
+      return {
+        ok: false,
+        payment: latest,
+        message: "This payment cannot be paid again."
+      };
+    }
+
+    const lockedPayment: Payment = {
+      ...latest,
+      status: "pending",
+      lockedAt: now,
+      lockedByWalletAddress: walletAddress,
+      attemptId,
+      updatedAt: now,
+      failedAt: undefined,
+      confirmedAt: undefined,
+      failureReason: undefined
+    };
+
+    transaction.set(paymentRef, stripUndefined(lockedPayment), { merge: true });
+
+    return {
+      ok: true,
+      payment: lockedPayment,
+      attemptId
+    };
+  });
+}
+
+export async function checkPaymentReceiptStatus(payment: Payment): Promise<PaymentReceiptStatus> {
+  if (!payment.txHash || getArcPaymentMode() === "mock" || !arcNetwork.chainId) {
+    return "not_found";
+  }
+
+  try {
+    const receipt = await getTransactionReceipt(wagmiConfig, {
+      hash: payment.txHash as Hash,
+      chainId: arcNetwork.chainId
+    });
+
+    return receipt.status === "success" ? "success" : "reverted";
+  } catch {
+    return "not_found";
+  }
 }
 
 export function generateMockTxHash(seed: string, now: number) {

@@ -46,12 +46,14 @@ export function PaymentSheet({
   }
 
   const paid = payment.status === "paid";
+  const pending = payment.status === "pending";
   const failed = payment.status === "failed";
+  const cancelled = payment.status === "cancelled";
   const missingConfig = arcNetwork.missingPaymentEnvVars.length > 0;
   const wrongNetwork = paymentMode === "testnet" && connection.isConnected && isWrongArcNetwork(connection.chainId);
   const needsWallet = paymentMode === "testnet" && !connection.isConnected;
   const explorerTxUrl = payment.txHash ? getArcExplorerTxUrl(payment.txHash) : undefined;
-  const title = paid ? "Payment complete" : failed ? "Payment failed" : "Pay with USDC";
+  const title = paid ? "Payment complete" : pending ? "Payment pending" : failed ? "Payment failed" : cancelled ? "Payment cancelled" : "Pay with USDC";
   const subtitle = paymentMode === "testnet" ? "Testnet payment" : "Demo payment";
   const confirmLabel = confirming
     ? "Confirming"
@@ -106,6 +108,28 @@ export function PaymentSheet({
               Done
             </Button>
           </>
+        ) : pending ? (
+          <>
+            <PaymentStatus state="pending" />
+            {payment.txHash ? <Detail label={paymentMode === "testnet" ? "Tx hash" : "Demo tx"} value={shortAddress(payment.txHash)} /> : null}
+            {paymentMode === "testnet" && explorerTxUrl ? (
+              <a
+                className="surface-row focus-ring flex min-h-[52px] items-center justify-center gap-2 rounded-[18px] px-4 text-sm font-semibold"
+                href={explorerTxUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                View on explorer
+                <ExternalLink size={16} />
+              </a>
+            ) : null}
+            <div className="surface-row rounded-[18px] p-3 text-sm text-[var(--text-secondary)]">
+              Waiting for confirmation. This payment is locked so it cannot be paid twice.
+            </div>
+            <Button fullWidth variant="secondary" onClick={onClose}>
+              Done
+            </Button>
+          </>
         ) : failed ? (
           <>
             <PaymentStatus state="failed" />
@@ -118,6 +142,16 @@ export function PaymentSheet({
                 Retry
               </Button>
             </div>
+          </>
+        ) : cancelled ? (
+          <>
+            <div className="rounded-[22px] border border-[var(--danger)]/45 bg-[var(--danger)]/10 p-5 text-center">
+              <h3 className="font-display text-xl font-bold">Payment cancelled</h3>
+              <p className="mt-2 text-sm text-[var(--text-secondary)]">This payment cannot be paid again from the same record.</p>
+            </div>
+            <Button fullWidth variant="secondary" onClick={onClose}>
+              Done
+            </Button>
           </>
         ) : insufficient ? (
           <>
@@ -171,7 +205,7 @@ export function PaymentSheet({
             </div>
             {paymentError ? <div className="surface-row rounded-[18px] p-3 text-sm text-[var(--danger)]">{paymentError}</div> : null}
             {payment.txHash ? <Detail label="Submitted tx" value={shortAddress(payment.txHash)} /> : null}
-            <Button fullWidth size="lg" icon={<CheckCircle2 size={18} />} onClick={() => void onConfirmPayment(payment.id)} disabled={confirming || wrongNetwork || needsWallet || payment.status === "pending"}>
+            <Button fullWidth size="lg" icon={<CheckCircle2 size={18} />} onClick={() => void onConfirmPayment(payment.id)} disabled={confirming || wrongNetwork || needsWallet || payment.status !== "unpaid"}>
               {confirmLabel}
             </Button>
             {paymentMode === "mock" ? (

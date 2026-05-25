@@ -4,7 +4,7 @@ import { PayButton } from "../components/payments/PayButton";
 import { Card } from "../components/ui/Card";
 import { Select } from "../components/ui/Input";
 import { formatDisplayAmount, formatUSDC, formatVND } from "../lib/format";
-import type { Balance, PaymentRequest } from "../models";
+import type { Balance, Payment, PaymentRequest } from "../models";
 import { getBalanceRecipientWallet, isTreasuryMemberId } from "../services/balanceService";
 import { canPayBalance, getCurrentMember } from "../services/groupService";
 import { useGroupStore } from "../state/useGroupStore";
@@ -16,7 +16,7 @@ type SplitPageProps = {
 };
 
 export function SplitPage({ onOpenPayment, onOpenGroup }: SplitPageProps) {
-  const { balances, currentUser, groups, members, treasuries } = useGroupStore();
+  const { balances, currentUser, groups, members, payments, treasuries } = useGroupStore();
   const { displayCurrency, primaryWallet } = useSettingsStore();
   const [groupFilter, setGroupFilter] = useState("all");
   const activeGroups = groups.filter((group) => group.status === "active");
@@ -76,6 +76,7 @@ export function SplitPage({ onOpenPayment, onOpenGroup }: SplitPageProps) {
               mode="owe"
               groups={groups}
               members={members}
+              payments={payments}
               treasuries={treasuries}
               walletAddress={primaryWallet.address}
               currentUserId={currentUser.id}
@@ -99,6 +100,7 @@ export function SplitPage({ onOpenPayment, onOpenGroup }: SplitPageProps) {
               mode="receive"
               groups={groups}
               members={members}
+              payments={payments}
               treasuries={treasuries}
               walletAddress={primaryWallet.address}
               currentUserId={currentUser.id}
@@ -129,6 +131,7 @@ function SplitRow({
   mode,
   groups,
   members,
+  payments,
   treasuries,
   walletAddress,
   currentUserId,
@@ -140,6 +143,7 @@ function SplitRow({
   mode: "owe" | "receive";
   groups: ReturnType<typeof useGroupStore>["groups"];
   members: ReturnType<typeof useGroupStore>["members"];
+  payments: Payment[];
   treasuries: ReturnType<typeof useGroupStore>["treasuries"];
   walletAddress: string;
   currentUserId: string;
@@ -152,6 +156,7 @@ function SplitRow({
   const to = members.find((member) => member.id === balance.toMemberId);
   const currentMember = group ? getCurrentMember(members, group.id, currentUserId) : undefined;
   const payAllowed = canPayBalance(currentMember);
+  const relatedPayment = getRelatedPayment(balance, payments);
   const displayName = mode === "owe" ? (isTreasuryMemberId(balance.toMemberId) ? "Group treasury" : to?.displayName) : from?.displayName;
   const toWalletAddress = getBalanceRecipientWallet(balance, members, treasuries);
 
@@ -204,10 +209,23 @@ function SplitRow({
                 })
               }
               disabled={!payAllowed}
+              status={relatedPayment?.status}
             />
           </span>
         ) : null}
       </div>
     </div>
   );
+}
+
+function getRelatedPayment(balance: Balance, payments: Payment[]) {
+  const related = payments.filter(
+    (payment) =>
+      payment.groupId === balance.groupId &&
+      payment.fromMemberId === balance.fromMemberId &&
+      payment.toMemberId === balance.toMemberId &&
+      (payment.balanceId === balance.id || payment.expenseId === balance.expenseId)
+  );
+
+  return related.find((payment) => payment.status === "pending") ?? related.find((payment) => payment.status === "paid") ?? related.find((payment) => payment.status === "failed") ?? related[0];
 }

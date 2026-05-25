@@ -22,8 +22,13 @@ export type Payment = {
   createdByUserId: string;
   createdAt: number;
   updatedAt: number;
+  lockedAt?: number;
+  lockedByWalletAddress?: string;
+  attemptId?: string;
+  submittedAt?: number;
   confirmedAt?: number;
   failedAt?: number;
+  failureReason?: string;
 };
 
 export type PaymentSheetState = "confirm" | "success" | "insufficient";
