@@ -4,6 +4,14 @@ ArcNest is a mobile-first shared expense and USDC payment app for Arc Testnet. I
 
 This repo is testnet-only and not mainnet-ready. Use a new test wallet, never enter seed phrases or private keys, and do not use real funds.
 
+## Security and Privacy Guardrails
+
+- ArcNest never asks for private keys, seed phrases, mnemonics, Firebase admin keys, or wallet client internals.
+- Do not commit `.env`, `.env.local`, private RPC secrets, Firebase admin service accounts, private keys, or seed phrases.
+- Wallet addresses are treated as public but sensitive identity data. UI should prefer shortened addresses such as `0x1234...ABCD`.
+- Public creator credit uses `nhatkhanh` only. Do not hardcode creator wallet or ENS details into app logic or public UI.
+- Production debug UI must not expose secrets or hidden session data.
+
 ## Local Development
 
 ```bash
@@ -71,6 +79,8 @@ ArcNest never asks for private keys or seed phrases.
 ## Logo
 
 Visible app branding uses `public/logo.png` first, then `public/logo.jpg`, then `public/logo.jpeg`, with the built-in `A` mark as fallback. Replace `public/logo.png` and redeploy to update the login screen, Home header, and Settings branding without changing code. Installed PWA icons may require reinstalling the PWA because browsers cache app icons.
+
+The current UI version is visible on the login screen and Settings. If a browser or installed PWA keeps showing an older version after deploy, hard refresh the page; for stale PWA icons, remove and reinstall the PWA.
 
 ## Wallets and Mobile
 

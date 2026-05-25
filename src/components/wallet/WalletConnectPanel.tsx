@@ -18,13 +18,19 @@ import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { NetworkBadge } from "./NetworkBadge";
 
-export function WalletConnectPanel() {
+type WalletConnectPanelProps = {
+  compact?: boolean;
+  onConnected?: () => void;
+};
+
+export function WalletConnectPanel({ compact = false, onConnected }: WalletConnectPanelProps = {}) {
   const connection = useConnection();
   const { connectAsync, connectors, error: connectError, isPending: connecting } = useConnect();
   const { disconnectAsync, error: disconnectError, isPending: disconnecting } = useDisconnect();
   const { switchChainAsync, error: switchError, isPending: switching } = useSwitchChain();
   const { disconnectConnectedWallet, upsertConnectedWallet } = useSettingsStore();
   const [localError, setLocalError] = useState<string>();
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const persistedConnection = useRef("");
   const lastConnectedAddress = useRef<string>();
   const walletRuntime = getWalletRuntime();
@@ -61,6 +67,7 @@ export function WalletConnectPanel() {
       connectorId: connection.connector?.id,
       connectorName: connection.connector?.name
     });
+    onConnected?.();
   }, [
     connection.address,
     connection.chainId,
@@ -69,6 +76,7 @@ export function WalletConnectPanel() {
     connection.isConnected,
     connection.isDisconnected,
     disconnectConnectedWallet,
+    onConnected,
     upsertConnectedWallet
   ]);
 
@@ -135,6 +143,95 @@ export function WalletConnectPanel() {
     }
   }
 
+  if (compact) {
+    return (
+      <Card className="text-left">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-[var(--text-muted)]">Wallet login</p>
+            <p className="number mt-2 truncate text-lg font-bold">{connectedAddress}</p>
+            <p className="mt-1 text-xs text-[var(--text-muted)]">
+              {connection.isConnected ? connection.connector?.name ?? "Connected wallet" : "Choose a wallet to continue"}
+            </p>
+          </div>
+          <NetworkBadge
+            status={wrongNetwork ? "wrong" : missingConfig ? "missing" : paymentMode === "testnet" ? "active" : "mock"}
+            label={wrongNetwork ? "Wrong network" : missingConfig ? "Missing config" : paymentMode === "testnet" ? "Arc Testnet" : "Preview"}
+          />
+        </div>
+
+        {walletError ? <div className="surface-row mt-4 rounded-[18px] p-3 text-sm text-[var(--danger)]">{walletError}</div> : null}
+
+        {missingConfig ? (
+          <div className="surface-row mt-4 rounded-[18px] p-3 text-sm text-[var(--text-secondary)]">
+            Arc Testnet payments are not ready on this deploy. Preview payments stay local.
+          </div>
+        ) : null}
+
+        {walletRuntime.isMobile && !walletRuntime.isInMetaMask && !walletRuntime.isInRabby ? (
+          <div className="surface-row mt-4 rounded-[18px] p-3 text-sm text-[var(--text-secondary)]">
+            For the smoothest mobile signing flow, open ArcNest in a wallet browser or use WalletConnect.
+          </div>
+        ) : null}
+
+        {!connection.isConnected ? (
+          <div className="mt-4 grid gap-3">
+            {connectableWallets.slice(0, 2).map((connector) => (
+              <Button key={connector.uid} fullWidth icon={<Wallet size={16} />} onClick={() => void connectWallet(connector)} disabled={connecting}>
+                {connecting ? "Connecting" : connector.name}
+              </Button>
+            ))}
+            {connectableWallets.length === 0 ? (
+              <div className="surface-row rounded-[18px] p-3 text-sm text-[var(--text-secondary)]">
+                No wallet connector is available in this browser.
+              </div>
+            ) : null}
+          </div>
+        ) : wrongNetwork ? (
+          <Button fullWidth className="mt-4" variant="secondary" icon={<RefreshCcw size={16} />} onClick={() => void switchToArc()} disabled={switching}>
+            Switch to Arc Testnet
+          </Button>
+        ) : (
+          <div className="surface-row mt-4 rounded-[18px] p-3 text-sm text-[var(--text-secondary)]">
+            Wallet is ready. ArcNest will open automatically.
+          </div>
+        )}
+
+        <Button fullWidth className="mt-3" variant="muted" size="sm" onClick={() => setAdvancedOpen((open) => !open)}>
+          {advancedOpen ? "Hide wallet options" : "Wallet options"}
+        </Button>
+
+        {advancedOpen ? (
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            {walletRuntime.isMobile && !walletRuntime.isInMetaMask ? (
+              <Button variant="secondary" icon={<ExternalLink size={16} />} onClick={() => openMetaMaskDeepLink()}>
+                Open wallet app
+              </Button>
+            ) : null}
+            {connection.isConnected ? (
+              <Button variant="muted" icon={<LogOut size={16} />} onClick={() => void disconnectWallet()} disabled={disconnecting}>
+                Disconnect
+              </Button>
+            ) : null}
+            <Button variant="secondary" icon={<Wifi size={16} />} onClick={() => void switchToArc()} disabled={missingConfig || switching}>
+              Switch Arc
+            </Button>
+            <Button variant="muted" icon={<PlugZap size={16} />} onClick={() => void addArcTestnet()} disabled={missingConfig}>
+              Add Arc Testnet
+            </Button>
+            {!connection.isConnected
+              ? connectableWallets.slice(2).map((connector) => (
+                  <Button key={connector.uid} variant="muted" icon={<Wallet size={16} />} onClick={() => void connectWallet(connector)} disabled={connecting}>
+                    {connector.name}
+                  </Button>
+                ))
+              : null}
+          </div>
+        ) : null}
+      </Card>
+    );
+  }
+
   return (
     <Card>
       <div className="flex items-start justify-between gap-4">
@@ -142,7 +239,7 @@ export function WalletConnectPanel() {
           <p className="text-sm font-semibold text-[var(--text-muted)]">Wallet connection</p>
           <p className="number mt-2 truncate text-lg font-bold">{connectedAddress}</p>
           <p className="mt-1 text-xs text-[var(--text-muted)]">
-            {connection.connector?.name ?? (connection.isConnected ? "Connected wallet" : "Connect for signed payments")} · {getWalletRuntimeLabel(walletRuntime)}
+            {connection.connector?.name ?? (connection.isConnected ? "Connected wallet" : "Connect for signed payments")} - {getWalletRuntimeLabel(walletRuntime)}
           </p>
         </div>
         <NetworkBadge

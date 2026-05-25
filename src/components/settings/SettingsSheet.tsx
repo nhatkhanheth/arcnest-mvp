@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import type { DisplayCurrency, LanguageCode, LocalWallet, SettingsSplitMode, ThemeMode, Wallet as WalletModel } from "../../models";
+import { APP_VERSION, CREATOR_CREDIT } from "../../lib/appMeta";
 import { convertUSDCToDisplayAmount, formatUSDC, formatVND, shortAddress } from "../../lib/format";
 import { useGroupStore } from "../../state/useGroupStore";
 import { useSettingsStore } from "../../state/useSettingsStore";
@@ -276,10 +277,10 @@ export function SettingsSheet({
             <AppLogo size={42} rounded="rounded-[15px]" />
             <div>
               <p className="font-display text-lg font-bold">ArcNest</p>
-              <p className="text-xs font-medium text-[var(--text-muted)]">Created by nhatkhanh.eth</p>
+              <p className="text-xs font-medium text-[var(--text-muted)]">Created by {CREATOR_CREDIT}</p>
             </div>
           </div>
-          <InfoRow label="App version" value="0.3.0 firebase" />
+          <InfoRow label="App version" value={APP_VERSION} />
           <ActionRow label="About us" detail="Placeholder" />
           <ActionRow label="X / Twitter" detail="Placeholder" icon={<Twitter size={16} />} />
           <ActionRow label="Terms of Use" detail="Placeholder" />

@@ -480,6 +480,17 @@ export function App() {
     commitRoute({ tab: "home" }, { replace: true });
   }
 
+  function enterWalletSession() {
+    if (!isWalletSessionActive(settings, connection) || !primaryWallet.address) {
+      return;
+    }
+
+    setStoredSessionMode("wallet");
+    setSessionMode("wallet");
+    completeOnboarding();
+    commitRoute({ tab: "home" }, { replace: true });
+  }
+
   async function logout() {
     try {
       if (connection.isConnected) {
@@ -634,10 +645,12 @@ export function App() {
               }
               startDemoSession();
             }}
+            onContinueWallet={enterWalletSession}
             appLocked={appLock.enabled && appLock.locked}
             hasLocalPasscode={Boolean(appLock.passcodeHash)}
             previousWalletAddress={settings.wallets[0]?.address}
             hasPreviousWallet={settings.wallets.length > 0}
+            walletSessionActive={walletSessionActive}
             unlockError={unlockError}
             onUnlockApp={unlockApp}
           />
