@@ -18,7 +18,7 @@ export function QRGenerator({ value, label }: QRGeneratorProps) {
     void QRCode.toCanvas(canvasRef.current, value, {
       errorCorrectionLevel: "M",
       margin: 2,
-      scale: 8,
+      width: 256,
       color: {
         dark: "#080810",
         light: "#f7f4ea"
@@ -29,9 +29,17 @@ export function QRGenerator({ value, label }: QRGeneratorProps) {
   }, [value]);
 
   return (
-    <div className="space-y-4">
-      <div className="mx-auto w-full max-w-[260px] rounded-[28px] bg-[var(--text-primary)] p-4">
-        <canvas ref={canvasRef} className="block aspect-square h-auto w-full rounded-[18px]" aria-label={label} />
+    <div className="min-w-0 space-y-4 overflow-hidden">
+      <div
+        className="mx-auto w-full rounded-[28px] bg-[var(--text-primary)] p-3"
+        style={{ maxWidth: "280px" }}
+      >
+        <canvas
+          ref={canvasRef}
+          className="block aspect-square h-auto w-full max-w-full rounded-[18px]"
+          style={{ maxWidth: "100%" }}
+          aria-label={label}
+        />
       </div>
       <div className="text-center">
         <p className="font-semibold">{label}</p>

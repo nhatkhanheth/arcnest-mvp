@@ -36,7 +36,7 @@ export function BottomSheet({ open, title, subtitle, children, onClose, footer, 
               <X size={18} />
             </Button>
           </div>
-          <div className={[fullHeight ? "max-h-[calc(92dvh-92px)]" : "max-h-[72dvh]", "overflow-y-auto px-5 pb-[calc(20px+env(safe-area-inset-bottom))]"].join(" ")}>{children}</div>
+          <div className={[fullHeight ? "max-h-[calc(92dvh-92px)]" : "max-h-[72dvh]", "overflow-x-hidden overflow-y-auto px-5 pb-[calc(20px+env(safe-area-inset-bottom))]"].join(" ")}>{children}</div>
           {footer ? (
             <div className="border-t border-[var(--border-soft)] px-5 pb-[calc(20px+env(safe-area-inset-bottom))] pt-4">
               {footer}

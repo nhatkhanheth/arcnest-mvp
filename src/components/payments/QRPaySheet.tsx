@@ -321,7 +321,7 @@ function GeneratedPayload({
   onLoad: () => void;
 }) {
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4 overflow-hidden">
       <QRGenerator value={qrValue} label={label} />
       {inviteLink ? (
         <div className="surface-row rounded-[18px] p-3">
@@ -407,7 +407,7 @@ function createQRDataUrl(value: string) {
   return QRCode.toDataURL(value, {
     errorCorrectionLevel: "M",
     margin: 2,
-    scale: 8,
+    width: 1024,
     color: {
       dark: "#080810",
       light: "#f7f4ea"
