@@ -3,7 +3,7 @@ export type ArcNestPaymentQRPayload = {
   version: 1;
   network: "arc";
   receiverAddress: string;
-  amountUSDC: string;
+  amountUSDC?: string;
   groupId: string;
   paymentId: string;
   note?: string;
@@ -34,7 +34,7 @@ export type CreatePaymentQRPayloadInput = {
   paymentId?: string;
   receiverAddress?: string;
   toWalletAddress?: string;
-  amountUSDC: string;
+  amountUSDC?: string;
   groupId: string;
   note?: string;
 };
@@ -45,12 +45,14 @@ export type CreateInviteQRPayloadInput = {
 };
 
 export function createPaymentQRPayload(input: CreatePaymentQRPayloadInput): ArcNestPaymentQRPayload {
+  const amountUSDC = getOptionalPositiveAmount(input.amountUSDC);
+
   return stripUndefined({
     type: "arcnest_payment",
     version: 1,
     network: "arc",
     receiverAddress: input.receiverAddress ?? input.toWalletAddress ?? "",
-    amountUSDC: input.amountUSDC,
+    amountUSDC,
     groupId: input.groupId,
     paymentId: input.paymentId ?? input.id ?? `qr_${input.groupId}`,
     note: input.note
@@ -120,7 +122,11 @@ export function validateQRPayload(value: unknown): QRPayloadResult {
     const paymentId = getString(value.paymentId);
     const note = getOptionalString(value.note);
 
-    if (!receiverAddress || !amountUSDC || !groupId || !paymentId || !hasPositiveAmount(amountUSDC)) {
+    if (!receiverAddress || !groupId || !paymentId) {
+      return { ok: false, message: "Missing payment info" };
+    }
+
+    if (amountUSDC && !hasPositiveAmount(amountUSDC)) {
       return { ok: false, message: "Missing payment info" };
     }
 
@@ -205,6 +211,12 @@ function getOptionalString(value: unknown) {
 function hasPositiveAmount(amountUSDC: string) {
   const numeric = Number(amountUSDC);
   return Number.isFinite(numeric) && numeric > 0;
+}
+
+function getOptionalPositiveAmount(amountUSDC: string | undefined) {
+  const amount = amountUSDC?.trim();
+
+  return amount && hasPositiveAmount(amount) ? amount : undefined;
 }
 
 function stripUndefined<T extends Record<string, unknown>>(value: T) {

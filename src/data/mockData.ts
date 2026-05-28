@@ -498,7 +498,6 @@ export const qrPayloads: { payment: ArcNestQRPayload; invite: ArcNestQRPayload }
     version: 1,
     network: "arc",
     receiverAddress: primaryWallet.address,
-    amountUSDC: "12.50",
     groupId: "group_tennis",
     paymentId: "payment_preview",
     note: "C1K Tennis payment"

@@ -51,8 +51,9 @@ export function QRPaySheet({
   const [message, setMessage] = useState<string>();
   const [copied, setCopied] = useState<string>();
   const [ensuredInviteCode, setEnsuredInviteCode] = useState<string>();
-  const [qrAmountUSDC, setQRAmountUSDC] = useState("12.50");
+  const [qrAmountUSDC, setQRAmountUSDC] = useState("");
   const [qrNote, setQRNote] = useState("");
+  const normalizedQRAmountUSDC = normalizeOptionalUSDCAmount(qrAmountUSDC);
 
   const paymentRequest = useMemo<PaymentRequest>(
     () => ({
@@ -62,22 +63,22 @@ export function QRPaySheet({
       toName: "You",
       toWalletAddress: primaryWalletAddress ?? "",
       fromWalletAddress: primaryWalletAddress ?? "",
-      amountUSDC: qrAmountUSDC,
-      amountVND: Math.round(Number(qrAmountUSDC || 0) * USDC_VND_RATE),
+      amountUSDC: normalizedQRAmountUSDC ?? "0",
+      amountVND: Math.round(Number(normalizedQRAmountUSDC ?? 0) * USDC_VND_RATE),
       note: qrNote.trim() || (activeGroupName ? `${activeGroupName} payment` : "ArcNest QR Pay")
     }),
-    [activeGroupId, activeGroupName, primaryWalletAddress, qrAmountUSDC, qrNote]
+    [activeGroupId, activeGroupName, normalizedQRAmountUSDC, primaryWalletAddress, qrNote]
   );
   const paymentPayload = useMemo<ArcNestPaymentQRPayload>(
     () =>
       createPaymentQRPayload({
         id: paymentRequest.id,
         receiverAddress: paymentRequest.toWalletAddress,
-        amountUSDC: paymentRequest.amountUSDC,
+        amountUSDC: normalizedQRAmountUSDC,
         groupId: activeGroupId,
         note: paymentRequest.note
       }),
-    [activeGroupId, paymentRequest]
+    [activeGroupId, normalizedQRAmountUSDC, paymentRequest]
   );
   const activeInviteCode = inviteCode ?? ensuredInviteCode;
   const inviteLink = activeInviteCode ? getInviteUrl(activeInviteCode) : undefined;
@@ -100,6 +101,8 @@ export function QRPaySheet({
       setPayloadText("");
       setMessage(undefined);
       setCopied(undefined);
+      setQRAmountUSDC("");
+      setQRNote("");
     }
   }, [mode, open]);
 
@@ -233,7 +236,7 @@ export function QRPaySheet({
         {active === "myqr" ? (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
-              <Input label="Amount USDC" inputMode="decimal" value={qrAmountUSDC} onChange={(event) => setQRAmountUSDC(event.target.value)} />
+              <Input label="Amount USDC" inputMode="decimal" value={qrAmountUSDC} placeholder="Optional amount" onChange={(event) => setQRAmountUSDC(event.target.value)} />
               <Input label="Note" value={qrNote} placeholder={activeGroupName ?? "ArcNest"} onChange={(event) => setQRNote(event.target.value)} />
             </div>
             <GeneratedPayload
@@ -413,4 +416,15 @@ function createQRDataUrl(value: string) {
       light: "#f7f4ea"
     }
   });
+}
+
+function normalizeOptionalUSDCAmount(value: string) {
+  const amount = value.trim();
+
+  if (!amount) {
+    return undefined;
+  }
+
+  const numeric = Number(amount);
+  return Number.isFinite(numeric) && numeric > 0 ? amount : undefined;
 }

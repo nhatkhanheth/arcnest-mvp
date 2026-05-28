@@ -59,7 +59,7 @@ function copyFor(activity: Activity) {
     case "invite_used":
       return `Invite used: ${String(metadata.inviteCode ?? "QR invite")}`;
     case "role_changed":
-      return `${String(metadata.memberName ?? "A member")} is now ${String(metadata.role ?? "Member")}`;
+      return `${String(metadata.memberName ?? "A member")} is now ${String(metadata.newRole ?? metadata.role ?? "Member")}`;
     default:
       return "Activity updated";
   }

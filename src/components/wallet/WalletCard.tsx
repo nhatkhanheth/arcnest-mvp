@@ -1,4 +1,4 @@
-import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, QrCode } from "lucide-react";
 import type { Wallet } from "../../models";
 import { formatUSDC, formatVND } from "../../lib/format";
 import { Button } from "../ui/Button";
@@ -9,9 +9,10 @@ type WalletCardProps = {
   wallet: Wallet;
   onSend: () => void;
   onReceive: () => void;
+  onScanQR?: () => void;
 };
 
-export function WalletCard({ wallet, onSend, onReceive }: WalletCardProps) {
+export function WalletCard({ wallet, onSend, onReceive, onScanQR }: WalletCardProps) {
   return (
     <Card className="overflow-hidden">
       <div>
@@ -27,13 +28,18 @@ export function WalletCard({ wallet, onSend, onReceive }: WalletCardProps) {
         <NetworkBadge />
         <span className="text-xs font-medium text-[var(--text-muted)]">Arc wallet</span>
       </div>
-      <div className="mt-5 grid grid-cols-2 gap-3">
+      <div className={["mt-5 grid gap-3", onScanQR ? "grid-cols-3" : "grid-cols-2"].join(" ")}>
         <Button variant="muted" size="md" icon={<ArrowUpRight size={18} />} onClick={onSend}>
           Send
         </Button>
         <Button variant="muted" size="md" icon={<ArrowDownLeft size={18} />} onClick={onReceive}>
           Receive
         </Button>
+        {onScanQR ? (
+          <Button variant="muted" size="md" icon={<QrCode size={18} />} onClick={onScanQR}>
+            QR
+          </Button>
+        ) : null}
       </div>
     </Card>
   );

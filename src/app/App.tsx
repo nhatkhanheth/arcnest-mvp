@@ -423,10 +423,10 @@ export function App() {
     const toMember = members.find(
       (member) => member.groupId === payload.groupId && member.walletAddress?.toLowerCase() === payload.receiverAddress.toLowerCase()
     );
-    const amountVND = Math.round(Number(payload.amountUSDC) * USDC_VND_RATE);
+    const amountVND = Math.round(Number(payload.amountUSDC ?? 0) * USDC_VND_RATE);
 
     if (!Number.isFinite(amountVND) || amountVND <= 0) {
-      return "Missing payment info";
+      return "This QR has no fixed amount yet.";
     }
 
     return openPayment({
@@ -438,7 +438,7 @@ export function App() {
       toName: toMember?.displayName ?? "QR receiver",
       toWalletAddress: payload.receiverAddress,
       fromWalletAddress: primaryWallet.address,
-      amountUSDC: payload.amountUSDC,
+      amountUSDC: payload.amountUSDC ?? "0",
       amountVND,
       note: payload.note ?? group?.name ?? "QR Pay"
     });
@@ -666,7 +666,7 @@ export function App() {
           <GlobalHeaderActions
             syncLabel={getSyncLabel(authState, firebaseSync)}
             onOpenSettings={() => setSettingsOpen(true)}
-            onOpenQR={() => openQR("scan")}
+            onOpenQR={() => openQR("myqr")}
           />
         ) : null}
 
@@ -688,6 +688,7 @@ export function App() {
             onOpenQR={openQR}
             onOpenPayment={openPayment}
             onOpenSend={() => setSendOpen(true)}
+            onOpenScanQR={() => openQR("scan")}
             onOpenSettings={() => setSettingsOpen(true)}
             syncLabel={getSyncLabel(authState, firebaseSync)}
             onGoHome={goHome}

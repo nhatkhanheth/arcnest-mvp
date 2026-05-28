@@ -1612,6 +1612,10 @@ const actions = {
       return { ok: false, message: "Your role cannot assign that role." };
     }
 
+    if (target.role === role) {
+      return { ok: true, memberId, message: "Role is already up to date." };
+    }
+
     const now = Date.now();
     const updatedTarget = updateMemberRole(target, role, now);
     const activity = createActivity(
@@ -1622,6 +1626,8 @@ const actions = {
         type: "role_changed",
         targetId: memberId,
         metadata: {
+          previousRole: target.role,
+          newRole: role,
           memberName: target.displayName,
           role
         }

@@ -18,6 +18,7 @@ type HomePageProps = {
   onOpenQR: (mode?: "scan" | "myqr" | "payload" | "invite") => void;
   onOpenPayment: (request: PaymentRequest) => void;
   onOpenSend: () => void;
+  onOpenScanQR: () => void;
   onOpenSettings: () => void;
   syncLabel?: string;
   onGoHome?: () => void;
@@ -25,7 +26,7 @@ type HomePageProps = {
   onGoToSplit: () => void;
 };
 
-export function HomePage({ onOpenQR, onOpenPayment, onOpenSend, onOpenSettings, syncLabel, onGoHome, onOpenGroup, onGoToSplit }: HomePageProps) {
+export function HomePage({ onOpenQR, onOpenPayment, onOpenSend, onOpenScanQR, onOpenSettings, syncLabel, onGoHome, onOpenGroup, onGoToSplit }: HomePageProps) {
   const connection = useConnection();
   const { balances, currentUser, globalSummary, members, groups, payments, treasuries, wallet } = useGroupStore();
   const { displayCurrency, primaryWallet } = useSettingsStore();
@@ -50,7 +51,7 @@ export function HomePage({ onOpenQR, onOpenPayment, onOpenSend, onOpenSettings, 
             </span>
           </button>
           <div className="flex shrink-0 items-center gap-2">
-            <Button aria-label="Open QR Pay" variant="muted" size="icon" className="h-10 w-10 rounded-[16px] bg-[var(--card-bg)]" onClick={() => onOpenQR("scan")}>
+            <Button aria-label="Open QR Pay" variant="muted" size="icon" className="h-10 w-10 rounded-[16px] bg-[var(--card-bg)]" onClick={() => onOpenQR("myqr")}>
               <QrCode size={18} />
             </Button>
             <Button aria-label="Open settings" variant="muted" size="icon" className="h-10 w-10 rounded-[16px] bg-[var(--card-bg)]" onClick={onOpenSettings}>
@@ -65,7 +66,7 @@ export function HomePage({ onOpenQR, onOpenPayment, onOpenSend, onOpenSettings, 
         </div>
       </header>
 
-      <WalletCard wallet={wallet} onSend={onOpenSend} onReceive={() => onOpenQR("myqr")} />
+      <WalletCard wallet={wallet} onSend={onOpenSend} onReceive={() => onOpenQR("myqr")} onScanQR={onOpenScanQR} />
 
       <Card>
         <div className="flex items-center justify-between">

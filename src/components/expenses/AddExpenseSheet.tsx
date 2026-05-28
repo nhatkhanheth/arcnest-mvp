@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, Plus } from "lucide-react";
 import type { Expense, ExpenseCategory, ExpenseShare, Group, GroupMember, SplitMode } from "../../models";
 import { fxRate } from "../../data/mockData";
@@ -22,6 +22,18 @@ type AddExpenseSheetProps = {
 };
 
 const categories: ExpenseCategory[] = ["Food", "Travel", "Bills", "Sports", "Shopping", "Entertainment", "Other"];
+type ExpenseFormState = {
+  title: string;
+  amountVND: number;
+  category: ExpenseCategory;
+  expenseDate: string;
+  paidBy: string;
+  participants: string[];
+  splitMode: SplitMode;
+  fixedAmount: number;
+  customAmounts: Record<string, number>;
+  note: string;
+};
 
 function toUSDC(amountVND: number) {
   return (amountVND / fxRate.usdcToVnd).toFixed(2);
@@ -29,43 +41,47 @@ function toUSDC(amountVND: number) {
 
 export function AddExpenseSheet({ open, group, members, expense, onClose, onSave }: AddExpenseSheetProps) {
   const { defaultSplitMode } = useSettingsStore();
+  const initializedSessionRef = useRef<string>();
   const [step, setStep] = useState<"details" | "review">("details");
-  const [title, setTitle] = useState("Dinner after tennis");
-  const [amountVND, setAmountVND] = useState(980000);
+  const [title, setTitle] = useState("");
+  const [amountVND, setAmountVND] = useState(0);
   const [category, setCategory] = useState<ExpenseCategory>("Food");
   const [expenseDate, setExpenseDate] = useState(getISODate());
   const [paidBy, setPaidBy] = useState(members[0]?.id ?? "");
   const [participants, setParticipants] = useState<string[]>(members.map((member) => member.id));
   const [splitMode, setSplitMode] = useState<SplitMode>("equal");
-  const [fixedAmount, setFixedAmount] = useState(245000);
+  const [fixedAmount, setFixedAmount] = useState(0);
   const [customAmounts, setCustomAmounts] = useState<Record<string, number>>(
-    Object.fromEntries(members.map((member) => [member.id, Math.round(980000 / Math.max(members.length, 1))]))
+    Object.fromEntries(members.map((member) => [member.id, 0]))
   );
   const [note, setNote] = useState("");
   const [saveError, setSaveError] = useState<string>();
 
   useEffect(() => {
     if (!open) {
+      initializedSessionRef.current = undefined;
       return;
     }
 
-    const fallbackAmount = expense?.amountVND ?? 980000;
-    const fallbackParticipants = expense?.participants ?? members.map((member) => member.id);
-    const fallbackSplitAmounts =
-      expense?.splitAmountsVND ??
-      Object.fromEntries(fallbackParticipants.map((memberId) => [memberId, Math.round(fallbackAmount / Math.max(fallbackParticipants.length, 1))]));
+    const sessionKey = `${group.id}:${expense?.id ?? "new"}`;
 
+    if (initializedSessionRef.current === sessionKey || (!expense && members.length === 0)) {
+      return;
+    }
+
+    initializedSessionRef.current = sessionKey;
+    const initial = getInitialFormState({ expense, members, defaultSplitMode });
     setStep("details");
-    setTitle(expense?.title ?? "Dinner after tennis");
-    setAmountVND(fallbackAmount);
-    setCategory(expense?.category ?? "Food");
-    setExpenseDate(expense ? getExpenseDate(expense) : getISODate());
-    setPaidBy(expense && members.some((member) => member.id === expense.paidBy) ? expense.paidBy : members[0]?.id ?? "");
-    setParticipants(fallbackParticipants);
-    setSplitMode(expense?.splitMode ?? defaultSplitMode);
-    setFixedAmount(Number(Object.values(fallbackSplitAmounts)[0] ?? Math.round(fallbackAmount / Math.max(fallbackParticipants.length, 1))));
-    setCustomAmounts(fallbackSplitAmounts);
-    setNote(expense?.note ?? "");
+    setTitle(initial.title);
+    setAmountVND(initial.amountVND);
+    setCategory(initial.category);
+    setExpenseDate(initial.expenseDate);
+    setPaidBy(initial.paidBy);
+    setParticipants(initial.participants);
+    setSplitMode(initial.splitMode);
+    setFixedAmount(initial.fixedAmount);
+    setCustomAmounts(initial.customAmounts);
+    setNote(initial.note);
     setSaveError(undefined);
   }, [defaultSplitMode, expense, group.id, members, open]);
 
@@ -156,6 +172,7 @@ export function AddExpenseSheet({ open, group, members, expense, onClose, onSave
   function closeSheet() {
     setStep("details");
     setSaveError(undefined);
+    initializedSessionRef.current = undefined;
     onClose();
   }
 
@@ -291,4 +308,54 @@ export function AddExpenseSheet({ open, group, members, expense, onClose, onSave
       )}
     </BottomSheet>
   );
+}
+
+function getInitialFormState({
+  expense,
+  members,
+  defaultSplitMode
+}: {
+  expense?: Expense;
+  members: GroupMember[];
+  defaultSplitMode: SplitMode;
+}): ExpenseFormState {
+  const participantIds = members.map((member) => member.id);
+
+  if (!expense) {
+    return {
+      title: "",
+      amountVND: 0,
+      category: "Food",
+      expenseDate: getISODate(),
+      paidBy: members[0]?.id ?? "",
+      participants: participantIds,
+      splitMode: defaultSplitMode,
+      fixedAmount: 0,
+      customAmounts: Object.fromEntries(participantIds.map((memberId) => [memberId, 0])),
+      note: ""
+    };
+  }
+
+  const fallbackParticipants = expense.participants.length > 0 ? expense.participants : participantIds;
+  const fallbackSplitAmounts =
+    expense.splitAmountsVND ??
+    Object.fromEntries(
+      fallbackParticipants.map((memberId) => [
+        memberId,
+        Math.round(expense.amountVND / Math.max(fallbackParticipants.length, 1))
+      ])
+    );
+
+  return {
+    title: expense.title,
+    amountVND: expense.amountVND,
+    category: expense.category,
+    expenseDate: getExpenseDate(expense),
+    paidBy: members.some((member) => member.id === expense.paidBy) ? expense.paidBy : members[0]?.id ?? "",
+    participants: fallbackParticipants,
+    splitMode: expense.splitMode,
+    fixedAmount: Number(Object.values(fallbackSplitAmounts)[0] ?? 0),
+    customAmounts: fallbackSplitAmounts,
+    note: expense.note ?? ""
+  };
 }

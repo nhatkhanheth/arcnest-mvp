@@ -360,11 +360,8 @@ export async function persistMember(member: GroupMember) {
     );
   }
 
-  if (member.authUserId) {
-    batch.set(doc(database, "users", member.authUserId, "memberships", member.id), stripUndefined(member), { merge: true });
-  }
-
   await batch.commit();
+  await persistAuthMembershipBestEffort(member);
   await persistAccountMembershipBestEffort(member);
 }
 
@@ -591,5 +588,19 @@ async function persistAccountMembershipBestEffort(member: GroupMember) {
     await setDoc(doc(database, "accounts", member.userId, "memberships", member.id), payload, { merge: true });
   } catch {
     // Legacy account memberships are best-effort because older rules may not allow this path yet.
+  }
+}
+
+async function persistAuthMembershipBestEffort(member: GroupMember) {
+  if (!member.authUserId) {
+    return;
+  }
+
+  const database = getFirestoreOrThrow();
+
+  try {
+    await setDoc(doc(database, "users", member.authUserId, "memberships", member.id), stripUndefined(member), { merge: true });
+  } catch {
+    // Owners/admins can update the group member record, but cannot write another user's private membership index.
   }
 }
