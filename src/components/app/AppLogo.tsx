@@ -20,9 +20,7 @@ export function AppLogo({ size, variant = "default", className = "", rounded, im
     <span
       className={[
         "inline-flex shrink-0 items-center justify-center",
-        source
-          ? "overflow-visible border border-transparent bg-transparent shadow-none"
-          : "overflow-hidden border border-[var(--border-soft)] bg-[var(--arc-soft)] shadow-[0_14px_42px_rgba(49,57,251,0.18)]",
+        "overflow-hidden border border-[var(--border-soft)] bg-[var(--bg-main)] shadow-[0_14px_42px_var(--shadow-soft)]",
         shellRadius,
         className
       ].join(" ")}
@@ -35,8 +33,8 @@ export function AppLogo({ size, variant = "default", className = "", rounded, im
           alt=""
           className={[
             "block h-full w-full object-contain",
-            variant === "login" ? "scale-[1.04]" : "",
-            variant === "header" ? "scale-[1.08]" : "",
+            variant === "login" ? "scale-[0.9]" : "",
+            variant === "header" ? "scale-[0.86]" : "scale-[0.88]",
             imageClassName
           ].join(" ")}
           style={{ imageRendering: "auto" }}

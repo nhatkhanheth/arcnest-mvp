@@ -69,7 +69,7 @@ export const wagmiConfig = createConfig({
               name: "ArcNest",
               description: "Shared payments on Arc testnet",
               url: typeof window === "undefined" ? "https://arcnest.vercel.app" : window.location.origin,
-              icons: [typeof window === "undefined" ? "https://arcnest.vercel.app/logo.png" : `${window.location.origin}/logo.png`]
+              icons: [typeof window === "undefined" ? "https://arcnest.vercel.app/generated-app-icon-512.png" : `${window.location.origin}/generated-app-icon-512.png`]
             }
           })
         ]
