@@ -3,10 +3,14 @@ import type { ReactNode } from "react";
 import QRCode from "qrcode";
 import { ClipboardPaste, Copy, Download, ImageDown, Link2, QrCode, ScanLine, Share2, UserPlus } from "lucide-react";
 import type { ArcNestInviteQRPayload, ArcNestPaymentQRPayload, ArcNestQRPayload, PaymentRequest } from "../../models";
+import { copyToClipboard } from "../../lib/clipboard";
+import { shortAddress } from "../../lib/format";
 import { createInviteQRPayload, createPaymentQRPayload, createQRPayloadUri, parseQRPayload, stringifyQRPayload } from "../../lib/qr";
 import { USDC_VND_RATE } from "../../services/balanceService";
 import { getInviteUrl } from "../../services/inviteService";
+import { useClipboardToast } from "../../hooks/useClipboardToast";
 import { Button } from "../ui/Button";
+import { CopyToast } from "../ui/CopyToast";
 import { Input, TextArea } from "../ui/Input";
 import { BottomSheet } from "../ui/Modal";
 import { QRGenerator } from "./QRGenerator";
@@ -53,6 +57,7 @@ export function QRPaySheet({
   const [ensuredInviteCode, setEnsuredInviteCode] = useState<string>();
   const [qrAmountUSDC, setQRAmountUSDC] = useState("");
   const [qrNote, setQRNote] = useState("");
+  const { toastMessage, copyWithToast } = useClipboardToast();
   const normalizedQRAmountUSDC = normalizeOptionalUSDCAmount(qrAmountUSDC);
 
   const paymentRequest = useMemo<PaymentRequest>(
@@ -143,13 +148,15 @@ export function QRPaySheet({
   }
 
   async function copyText(value: string, key: string, success = "Copied.") {
-    try {
-      await navigator.clipboard?.writeText(value);
+    const result = await copyToClipboard(value);
+
+    if (result.ok) {
       setCopied(key);
       setMessage(success);
-    } catch {
-      setMessage("Copy is not available in this browser.");
+      return;
     }
+
+    setMessage(result.message);
   }
 
   async function downloadQR(value: string, fileName: string) {
@@ -202,6 +209,7 @@ export function QRPaySheet({
 
   return (
     <BottomSheet open={open} title="QR Pay" subtitle="Scan, request, or share an invite" onClose={onClose}>
+      <CopyToast message={toastMessage} />
       <div className="space-y-4">
         <div className="grid grid-cols-4 gap-2">
           {tabs.map((tab) => (
@@ -233,11 +241,25 @@ export function QRPaySheet({
             </Button>
           </>
         ) : null}
-        {active === "myqr" ? (
+        {active === "myqr" && !primaryWalletAddress ? (
+          <div className="surface-row rounded-[18px] p-4 text-sm text-[var(--text-secondary)]">
+            Connect wallet to receive payments.
+          </div>
+        ) : null}
+        {active === "myqr" && primaryWalletAddress ? (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <Input label="Amount USDC" inputMode="decimal" value={qrAmountUSDC} placeholder="Optional amount" onChange={(event) => setQRAmountUSDC(event.target.value)} />
               <Input label="Note" value={qrNote} placeholder={activeGroupName ?? "ArcNest"} onChange={(event) => setQRNote(event.target.value)} />
+            </div>
+            <div className="surface-row flex min-h-[58px] items-center justify-between gap-3 rounded-[18px] px-4 py-3">
+              <span className="min-w-0">
+                <span className="block text-xs font-semibold text-[var(--text-muted)]">Wallet address</span>
+                <span className="number mt-1 block truncate text-sm font-bold">{shortAddress(primaryWalletAddress)}</span>
+              </span>
+              <Button variant="secondary" size="sm" icon={<Copy size={16} />} onClick={() => void copyWithToast(primaryWalletAddress, "Address copied")}>
+                Copy Address
+              </Button>
             </div>
             <GeneratedPayload
               payload={paymentPayload}

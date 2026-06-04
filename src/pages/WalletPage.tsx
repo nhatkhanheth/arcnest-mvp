@@ -9,11 +9,13 @@ import { soundSettings } from "../data/mockData";
 import { arcNetwork, formatArcChain, getArcPaymentMode, isWrongArcNetwork } from "../lib/arc";
 import { CIRCLE_FAUCET_URL } from "../lib/appMeta";
 import { convertUSDCToDisplayAmount, formatUSDC, formatVND, shortAddress } from "../lib/format";
+import { useClipboardToast } from "../hooks/useClipboardToast";
 import type { ThemeMode } from "../models";
 import { useState } from "react";
 import { useConnection } from "wagmi";
 import { useGroupStore } from "../state/useGroupStore";
 import { useSettingsStore } from "../state/useSettingsStore";
+import { CopyToast } from "../components/ui/CopyToast";
 
 type WalletPageProps = {
   theme: ThemeMode;
@@ -27,7 +29,7 @@ export function WalletPage({ theme, onToggleTheme, onOpenQR, onOpenSend }: Walle
   const { activeWallet, displayCurrency, showWalletAddress } = useSettingsStore();
   const connection = useConnection();
   const [settings, setSettings] = useState(soundSettings);
-  const [addressCopied, setAddressCopied] = useState(false);
+  const { toastMessage, copyWithToast } = useClipboardToast();
   const paymentMode = getArcPaymentMode();
   const missingConfig = arcNetwork.missingPaymentEnvVars.length > 0;
   const wrongNetwork = paymentMode === "testnet" && connection.isConnected && isWrongArcNetwork(connection.chainId);
@@ -38,16 +40,12 @@ export function WalletPage({ theme, onToggleTheme, onOpenQR, onOpenSend }: Walle
   }
 
   function copyWalletAddress() {
-    if (!activeWallet.address) {
-      return;
-    }
-
-    void navigator.clipboard?.writeText(activeWallet.address);
-    setAddressCopied(true);
+    void copyWithToast(activeWallet.address, "Address copied");
   }
 
   return (
     <main className="screen-pad space-y-6">
+      <CopyToast message={toastMessage} />
       <header>
         <p className="text-sm font-medium text-[var(--text-muted)]">Wallet</p>
         <h1 className="font-display text-[28px] font-bold">Arc wallet</h1>
@@ -59,7 +57,7 @@ export function WalletPage({ theme, onToggleTheme, onOpenQR, onOpenSend }: Walle
             <p className="text-sm font-semibold text-[var(--text-muted)]">Wallet address</p>
             <p className="number mt-2 truncate text-lg font-bold">{showWalletAddress ? shortAddress(activeWallet.address) : "Hidden"}</p>
           </div>
-          <Button aria-label="Copy address" variant="muted" size="icon" onClick={() => void navigator.clipboard?.writeText(activeWallet.address)} disabled={!activeWallet.address}>
+          <Button aria-label="Copy address" variant="muted" size="icon" onClick={copyWalletAddress} disabled={!activeWallet.address}>
             <Copy size={18} />
           </Button>
         </div>
@@ -81,7 +79,7 @@ export function WalletPage({ theme, onToggleTheme, onOpenQR, onOpenSend }: Walle
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Button variant="secondary" icon={<Copy size={18} />} onClick={copyWalletAddress} disabled={!activeWallet.address}>
-              {addressCopied ? "Copied" : "Copy address"}
+              Copy address
             </Button>
             <a
               className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-[18px] border border-[var(--border-soft)] bg-[var(--row-bg)] px-4 text-sm font-semibold text-[var(--text-primary)] transition active:scale-[0.98]"

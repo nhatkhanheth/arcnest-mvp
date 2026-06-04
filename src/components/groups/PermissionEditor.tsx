@@ -1,5 +1,9 @@
 import { useMemo, useState } from "react";
+import { Copy } from "lucide-react";
 import type { GroupMember, MemberPermissions, MemberRole } from "../../models";
+import { shortAddress } from "../../lib/format";
+import { useClipboardToast } from "../../hooks/useClipboardToast";
+import { CopyToast } from "../ui/CopyToast";
 import { Select } from "../ui/Input";
 
 type PermissionEditorProps = {
@@ -26,6 +30,7 @@ const permissionLabels: Array<{ key: keyof MemberPermissions; label: string }> =
 export function PermissionEditor({ members, presets, actorMemberId, canManage, assignableRoles, onChangeRole }: PermissionEditorProps) {
   const [role, setRole] = useState<MemberRole>("owner");
   const [message, setMessage] = useState<string>();
+  const { toastMessage, copyWithToast } = useClipboardToast();
   const roleMembers = useMemo(() => members.filter((member) => member.role === role), [members, role]);
   const permissions = presets[role];
 
@@ -36,6 +41,7 @@ export function PermissionEditor({ members, presets, actorMemberId, canManage, a
 
   return (
     <div className="space-y-4">
+      <CopyToast message={toastMessage} />
       <div className="grid grid-cols-4 gap-2">
         {(["owner", "admin", "editor", "member"] as MemberRole[]).map((item) => (
           <button
@@ -65,6 +71,21 @@ export function PermissionEditor({ members, presets, actorMemberId, canManage, a
                 <div className="min-w-0">
                   <p className="truncate font-semibold">{member.displayName}</p>
                   <p className="text-xs capitalize text-[var(--text-muted)]">{member.role}</p>
+                  <div className="mt-1 flex min-w-0 items-center gap-2">
+                    <span className="number truncate text-xs text-[var(--text-muted)]">
+                      {member.walletAddress ? shortAddress(member.walletAddress) : "No wallet connected yet."}
+                    </span>
+                    {member.walletAddress ? (
+                      <button
+                        type="button"
+                        aria-label={`Copy wallet address for ${member.displayName}`}
+                        className="focus-ring inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-xl border border-[var(--border-soft)] text-[var(--text-muted)]"
+                        onClick={() => void copyWithToast(member.walletAddress, "Address copied")}
+                      >
+                        <Copy size={13} />
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
                 <div className="w-32">
                   <Select

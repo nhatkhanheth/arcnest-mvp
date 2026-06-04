@@ -6,7 +6,9 @@ import type { ArcPaymentMode } from "../../lib/arc";
 import { arcNetwork, getArcExplorerTxUrl, getFriendlyWalletError, isWrongArcNetwork, requestSwitchArcTestnet } from "../../lib/arc";
 import { CIRCLE_FAUCET_URL } from "../../lib/appMeta";
 import { formatUSDC, formatVND, shortAddress } from "../../lib/format";
+import { useClipboardToast } from "../../hooks/useClipboardToast";
 import { Button } from "../ui/Button";
+import { CopyToast } from "../ui/CopyToast";
 import { BottomSheet } from "../ui/Modal";
 import { PaymentStatus } from "./PaymentStatus";
 
@@ -40,7 +42,7 @@ export function PaymentSheet({
   const connection = useConnection();
   const { switchChainAsync } = useSwitchChain();
   const [networkError, setNetworkError] = useState<string>();
-  const [faucetAddressCopied, setFaucetAddressCopied] = useState(false);
+  const { toastMessage, copyWithToast } = useClipboardToast();
   const insufficient = request ? Number(request.amountUSDC) > Number(walletBalanceUSDC) : false;
 
   if (!request || !payment) {
@@ -90,17 +92,23 @@ export function PaymentSheet({
   }
 
   function copyPaymentWalletAddress() {
-    void navigator.clipboard?.writeText(payerWalletAddress);
-    setFaucetAddressCopied(true);
+    void copyWithToast(payerWalletAddress, "Address copied");
   }
 
   return (
     <BottomSheet open={open} title={title} subtitle={subtitle} onClose={onClose}>
+      <CopyToast message={toastMessage} />
       <div className="space-y-4">
         {paid ? (
           <>
             <PaymentStatus state="success" />
-            {payment.txHash ? <Detail label={paymentMode === "testnet" ? "Tx hash" : "Demo tx"} value={shortAddress(payment.txHash)} /> : null}
+            {payment.txHash ? (
+              <Detail
+                label={paymentMode === "testnet" ? "Tx hash" : "Demo tx"}
+                value={shortAddress(payment.txHash)}
+                onCopy={() => void copyWithToast(payment.txHash, "Transaction hash copied")}
+              />
+            ) : null}
             {paymentMode === "testnet" && explorerTxUrl ? (
               <a
                 className="surface-row focus-ring flex min-h-[52px] items-center justify-center gap-2 rounded-[18px] px-4 text-sm font-semibold"
@@ -119,7 +127,13 @@ export function PaymentSheet({
         ) : pending ? (
           <>
             <PaymentStatus state="pending" />
-            {payment.txHash ? <Detail label={paymentMode === "testnet" ? "Tx hash" : "Demo tx"} value={shortAddress(payment.txHash)} /> : null}
+            {payment.txHash ? (
+              <Detail
+                label={paymentMode === "testnet" ? "Tx hash" : "Demo tx"}
+                value={shortAddress(payment.txHash)}
+                onCopy={() => void copyWithToast(payment.txHash, "Transaction hash copied")}
+              />
+            ) : null}
             {paymentMode === "testnet" && explorerTxUrl ? (
               <a
                 className="surface-row focus-ring flex min-h-[52px] items-center justify-center gap-2 rounded-[18px] px-4 text-sm font-semibold"
@@ -171,7 +185,7 @@ export function PaymentSheet({
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <Button variant="secondary" icon={<Copy size={18} />} onClick={copyPaymentWalletAddress}>
-                  {faucetAddressCopied ? "Copied" : "Copy address"}
+                  Copy address
                 </Button>
                 <a
                   className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-[18px] border border-[var(--border-soft)] bg-[var(--row-bg)] px-4 text-sm font-semibold text-[var(--text-primary)] transition active:scale-[0.98]"
@@ -196,8 +210,8 @@ export function PaymentSheet({
               <p className="mt-1 text-sm text-[var(--text-secondary)]">{formatVND(request.amountVND)}</p>
             </div>
             <div className="space-y-2">
-              <Detail label="From wallet" value={shortAddress(request.fromWalletAddress)} />
-              <Detail label="To wallet" value={shortAddress(request.toWalletAddress)} supporting={request.toName} />
+              <Detail label="From wallet" value={shortAddress(request.fromWalletAddress)} onCopy={() => void copyWithToast(request.fromWalletAddress, "Sender address copied")} />
+              <Detail label="To wallet" value={shortAddress(request.toWalletAddress)} supporting={request.toName} onCopy={() => void copyWithToast(request.toWalletAddress, "Receiver address copied")} />
               <Detail label="Network" value={missingConfig ? "Missing config" : paymentMode === "testnet" ? "Arc testnet" : "Demo mode"} icon={<ShieldCheck size={16} />} />
               <Detail label="Status" value={payment.status === "pending" ? "Pending signature" : payment.status} />
               <Detail label="For" value={request.note ?? request.groupName ?? "ArcNest payment"} />
@@ -232,7 +246,7 @@ export function PaymentSheet({
               Never enter a seed phrase or private key in ArcNest. Do not use real funds.
             </div>
             {paymentError ? <div className="surface-row rounded-[18px] p-3 text-sm text-[var(--danger)]">{paymentError}</div> : null}
-            {payment.txHash ? <Detail label="Submitted tx" value={shortAddress(payment.txHash)} /> : null}
+            {payment.txHash ? <Detail label="Submitted tx" value={shortAddress(payment.txHash)} onCopy={() => void copyWithToast(payment.txHash, "Transaction hash copied")} /> : null}
             <Button fullWidth size="lg" icon={<CheckCircle2 size={18} />} onClick={() => void onConfirmPayment(payment.id)} disabled={confirming || wrongNetwork || needsWallet || payment.status !== "unpaid"}>
               {confirmLabel}
             </Button>
@@ -252,22 +266,36 @@ function Detail({
   label,
   value,
   supporting,
-  icon
+  icon,
+  onCopy
 }: {
   label: string;
   value: string;
   supporting?: string;
   icon?: ReactNode;
+  onCopy?: () => void;
 }) {
   return (
     <div className="surface-row flex min-h-[58px] items-center justify-between gap-4 rounded-[18px] px-4">
       <span className="text-sm text-[var(--text-muted)]">{label}</span>
-      <span className="min-w-0 text-right">
-        <span className="flex items-center justify-end gap-1.5 font-semibold">
-          {icon}
-          {value}
+      <span className="flex min-w-0 items-center justify-end gap-2 text-right">
+        <span className="min-w-0">
+          <span className="flex items-center justify-end gap-1.5 font-semibold">
+            {icon}
+            <span className="truncate">{value}</span>
+          </span>
+          {supporting ? <span className="block truncate text-xs text-[var(--text-muted)]">{supporting}</span> : null}
         </span>
-        {supporting ? <span className="block text-xs text-[var(--text-muted)]">{supporting}</span> : null}
+        {onCopy ? (
+          <button
+            type="button"
+            aria-label={`Copy ${label}`}
+            className="focus-ring inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-[var(--border-soft)] text-[var(--text-muted)]"
+            onClick={onCopy}
+          >
+            <Copy size={14} />
+          </button>
+        ) : null}
       </span>
     </div>
   );

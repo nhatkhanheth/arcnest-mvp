@@ -22,6 +22,7 @@ import {
 import { useEffect, useState, type ReactNode } from "react";
 import type { DisplayCurrency, LanguageCode, LocalWallet, SettingsSplitMode, ThemeMode, Wallet as WalletModel } from "../../models";
 import { APP_VERSION, CREATOR_CREDIT } from "../../lib/appMeta";
+import { copyToClipboard } from "../../lib/clipboard";
 import { convertUSDCToDisplayAmount, formatUSDC, formatVND, shortAddress } from "../../lib/format";
 import { useGroupStore } from "../../state/useGroupStore";
 import { useSettingsStore } from "../../state/useSettingsStore";
@@ -553,7 +554,7 @@ function ToggleRow({ label, enabled, onToggle, icon }: { label: string; enabled:
 }
 
 function copyAddress(address: string) {
-  void navigator.clipboard?.writeText(address);
+  void copyToClipboard(address);
 }
 
 function isStandaloneDisplay() {
