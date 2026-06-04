@@ -47,7 +47,7 @@ export function PaymentStatus({ state }: PaymentStatusProps) {
         <Wallet size={28} />
       </div>
       <h3 className="mt-4 font-display text-xl font-bold">Not enough USDC</h3>
-      <p className="mt-2 text-sm text-[var(--text-secondary)]">Add funds or lower the payment amount before trying again.</p>
+      <p className="mt-2 text-sm text-[var(--text-secondary)]">Get test USDC or lower the payment amount before trying again.</p>
     </div>
   );
 }

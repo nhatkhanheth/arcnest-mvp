@@ -1,7 +1,7 @@
 import { ExternalLink, LockKeyhole, ShieldAlert, Wallet } from "lucide-react";
 import { useState } from "react";
 import { dynamicEnabled } from "../../lib/dynamic";
-import { APP_VERSION, CREATOR_CREDIT } from "../../lib/appMeta";
+import { APP_VERSION, CIRCLE_FAUCET_URL, CREATOR_CREDIT } from "../../lib/appMeta";
 import { getWalletRuntime, openMetaMaskDeepLink } from "../../lib/mobileWallet";
 import { AppLogo } from "../app/AppLogo";
 import { Button } from "../ui/Button";
@@ -65,6 +65,15 @@ export function WelcomeScreen({
             <div className="space-y-2 text-sm text-[var(--text-secondary)]">
               <p className="font-semibold text-[var(--text-primary)]">Arc Testnet only</p>
               <p>Use a new test wallet only. Never enter a seed phrase or private key. Do not use real funds.</p>
+              <a
+                className="focus-ring inline-flex items-center gap-1.5 rounded-xl text-xs font-semibold text-[var(--arc-accent)]"
+                href={CIRCLE_FAUCET_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Get test USDC from Circle Faucet
+                <ExternalLink size={13} />
+              </a>
             </div>
           </div>
         </Card>

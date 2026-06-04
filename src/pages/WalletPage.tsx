@@ -1,4 +1,4 @@
-import { ArrowDownLeft, ArrowUpRight, Copy } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Copy, ExternalLink } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { SoundToggle } from "../components/ui/SoundToggle";
@@ -7,6 +7,7 @@ import { NetworkBadge } from "../components/wallet/NetworkBadge";
 import { WalletConnectPanel } from "../components/wallet/WalletConnectPanel";
 import { soundSettings } from "../data/mockData";
 import { arcNetwork, formatArcChain, getArcPaymentMode, isWrongArcNetwork } from "../lib/arc";
+import { CIRCLE_FAUCET_URL } from "../lib/appMeta";
 import { convertUSDCToDisplayAmount, formatUSDC, formatVND, shortAddress } from "../lib/format";
 import type { ThemeMode } from "../models";
 import { useState } from "react";
@@ -26,6 +27,7 @@ export function WalletPage({ theme, onToggleTheme, onOpenQR, onOpenSend }: Walle
   const { activeWallet, displayCurrency, showWalletAddress } = useSettingsStore();
   const connection = useConnection();
   const [settings, setSettings] = useState(soundSettings);
+  const [addressCopied, setAddressCopied] = useState(false);
   const paymentMode = getArcPaymentMode();
   const missingConfig = arcNetwork.missingPaymentEnvVars.length > 0;
   const wrongNetwork = paymentMode === "testnet" && connection.isConnected && isWrongArcNetwork(connection.chainId);
@@ -33,6 +35,15 @@ export function WalletPage({ theme, onToggleTheme, onOpenQR, onOpenSend }: Walle
 
   function toggleSound(id: string, enabled: boolean) {
     setSettings((current) => current.map((item) => (item.id === id ? { ...item, enabled } : item)));
+  }
+
+  function copyWalletAddress() {
+    if (!activeWallet.address) {
+      return;
+    }
+
+    void navigator.clipboard?.writeText(activeWallet.address);
+    setAddressCopied(true);
   }
 
   return (
@@ -62,6 +73,26 @@ export function WalletPage({ theme, onToggleTheme, onOpenQR, onOpenSend }: Walle
           <p className="mt-1 text-sm text-[var(--text-secondary)]">
             {displayCurrency === "USDC" ? formatVND(wallet.balanceVND) : convertUSDCToDisplayAmount(wallet.balanceUSDC, displayCurrency)}
           </p>
+        </div>
+        <div className="surface-row mt-5 space-y-3 rounded-[18px] p-3">
+          <div>
+            <p className="text-sm font-semibold">Need test USDC?</p>
+            <p className="mt-1 text-sm text-[var(--text-secondary)]">Copy your wallet address, then paste it into Circle Faucet.</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Button variant="secondary" icon={<Copy size={18} />} onClick={copyWalletAddress} disabled={!activeWallet.address}>
+              {addressCopied ? "Copied" : "Copy address"}
+            </Button>
+            <a
+              className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-[18px] border border-[var(--border-soft)] bg-[var(--row-bg)] px-4 text-sm font-semibold text-[var(--text-primary)] transition active:scale-[0.98]"
+              href={CIRCLE_FAUCET_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Get test USDC
+              <ExternalLink size={16} />
+            </a>
+          </div>
         </div>
         <div className="surface-row mt-5 rounded-[18px] p-3 text-sm text-[var(--text-secondary)]">
           Testnet only. Use a new test wallet, never enter a seed phrase or private key, and do not use real funds.

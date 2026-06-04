@@ -1,9 +1,10 @@
 import { useState, type ReactNode } from "react";
-import { CheckCircle2, ExternalLink, RotateCcw, ShieldCheck, TriangleAlert } from "lucide-react";
+import { CheckCircle2, Copy, ExternalLink, RotateCcw, ShieldCheck, TriangleAlert } from "lucide-react";
 import { useConnection, useSwitchChain } from "wagmi";
 import type { Payment, PaymentRequest } from "../../models";
 import type { ArcPaymentMode } from "../../lib/arc";
 import { arcNetwork, getArcExplorerTxUrl, getFriendlyWalletError, isWrongArcNetwork, requestSwitchArcTestnet } from "../../lib/arc";
+import { CIRCLE_FAUCET_URL } from "../../lib/appMeta";
 import { formatUSDC, formatVND, shortAddress } from "../../lib/format";
 import { Button } from "../ui/Button";
 import { BottomSheet } from "../ui/Modal";
@@ -39,6 +40,7 @@ export function PaymentSheet({
   const connection = useConnection();
   const { switchChainAsync } = useSwitchChain();
   const [networkError, setNetworkError] = useState<string>();
+  const [faucetAddressCopied, setFaucetAddressCopied] = useState(false);
   const insufficient = request ? Number(request.amountUSDC) > Number(walletBalanceUSDC) : false;
 
   if (!request || !payment) {
@@ -53,6 +55,7 @@ export function PaymentSheet({
   const wrongNetwork = paymentMode === "testnet" && connection.isConnected && isWrongArcNetwork(connection.chainId);
   const needsWallet = paymentMode === "testnet" && !connection.isConnected;
   const explorerTxUrl = payment.txHash ? getArcExplorerTxUrl(payment.txHash) : undefined;
+  const payerWalletAddress = request.fromWalletAddress;
   const title = paid ? "Payment complete" : pending ? "Payment pending" : failed ? "Payment failed" : cancelled ? "Payment cancelled" : "Pay with USDC";
   const subtitle = paymentMode === "testnet" ? "Testnet payment" : "Demo payment";
   const confirmLabel = confirming
@@ -84,6 +87,11 @@ export function PaymentSheet({
         setNetworkError(getFriendlyWalletError(fallbackError || error));
       }
     }
+  }
+
+  function copyPaymentWalletAddress() {
+    void navigator.clipboard?.writeText(payerWalletAddress);
+    setFaucetAddressCopied(true);
   }
 
   return (
@@ -156,6 +164,26 @@ export function PaymentSheet({
         ) : insufficient ? (
           <>
             <PaymentStatus state="insufficient" />
+            <div className="surface-row space-y-3 rounded-[18px] p-3">
+              <div>
+                <p className="text-sm font-semibold">Need test USDC?</p>
+                <p className="mt-1 text-sm text-[var(--text-secondary)]">Copy your wallet address, then paste it into Circle Faucet. Testnet only.</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Button variant="secondary" icon={<Copy size={18} />} onClick={copyPaymentWalletAddress}>
+                  {faucetAddressCopied ? "Copied" : "Copy address"}
+                </Button>
+                <a
+                  className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-[18px] border border-[var(--border-soft)] bg-[var(--row-bg)] px-4 text-sm font-semibold text-[var(--text-primary)] transition active:scale-[0.98]"
+                  href={CIRCLE_FAUCET_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Open Faucet
+                  <ExternalLink size={16} />
+                </a>
+              </div>
+            </div>
             <Button fullWidth variant="secondary" onClick={onClose}>
               Done
             </Button>
