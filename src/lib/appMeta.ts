@@ -1,3 +1,3 @@
-export const APP_VERSION = "v16.1";
+export const APP_VERSION = "v16.3";
 export const CREATOR_CREDIT = "nhatkhanh";
 export const CIRCLE_FAUCET_URL = "https://faucet.circle.com/";

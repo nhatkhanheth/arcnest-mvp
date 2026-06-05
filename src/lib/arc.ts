@@ -23,6 +23,7 @@ export const arcNetwork = {
   chain: "arc" as const,
   name: "Arc Testnet",
   chainId: arcChainId,
+  chainIdSource: readEnv("VITE_ARC_CHAIN_ID") ? "env" : "official-default",
   rpcUrl: arcRpcUrl,
   explorerUrl: arcExplorerUrl,
   usdcAddress: arcUsdcAddress,
@@ -125,6 +126,95 @@ export function getFriendlyWalletError(error: unknown) {
   return message;
 }
 
+export type ArcNetworkSwitchResult =
+  | { ok: true; chainId?: number }
+  | { ok: false; reason: "cancelled" | "manual" | "failed"; message: string };
+
+export async function switchArcTestnetWithFallback(options: {
+  switchChain?: () => Promise<unknown>;
+  connector?: unknown;
+} = {}): Promise<ArcNetworkSwitchResult> {
+  let switchError: unknown;
+
+  if (options.switchChain) {
+    try {
+      await options.switchChain();
+      return await verifyArcNetwork(await getWalletProviderFromConnector(options.connector));
+    } catch (error) {
+      switchError = error;
+
+      if (isUserRejectedWalletError(error)) {
+        return { ok: false, reason: "cancelled", message: "Network switch cancelled." };
+      }
+    }
+  }
+
+  const provider = (await getWalletProviderFromConnector(options.connector)) ?? getInjectedProvider();
+
+  if (!provider) {
+    return {
+      ok: false,
+      reason: "manual",
+      message: "This wallet cannot switch networks automatically. Please add Arc Testnet manually."
+    };
+  }
+
+  if (switchError && isUnsupportedWalletMethodError(switchError)) {
+    return {
+      ok: false,
+      reason: "manual",
+      message: "This wallet cannot switch networks automatically. Please add Arc Testnet manually."
+    };
+  }
+
+  try {
+    if (switchError && isUnknownChainError(switchError)) {
+      await requestAddArcTestnet(provider);
+      await requestSwitchArcTestnet(provider, { skipAddFallback: true });
+    } else {
+      await requestSwitchArcTestnet(provider);
+    }
+
+    return await verifyArcNetwork(provider);
+  } catch (error) {
+    if (isUserRejectedWalletError(error)) {
+      return { ok: false, reason: "cancelled", message: "Network switch cancelled." };
+    }
+
+    if (isUnknownChainError(error)) {
+      try {
+        await requestAddArcTestnet(provider);
+        await requestSwitchArcTestnet(provider, { skipAddFallback: true });
+        return await verifyArcNetwork(provider);
+      } catch (addError) {
+        if (isUserRejectedWalletError(addError)) {
+          return { ok: false, reason: "cancelled", message: "Network switch cancelled." };
+        }
+
+        if (isUnsupportedWalletMethodError(addError)) {
+          return {
+            ok: false,
+            reason: "manual",
+            message: "This wallet cannot add networks automatically. Please add Arc Testnet manually."
+          };
+        }
+
+        return { ok: false, reason: "failed", message: getFriendlyWalletError(addError) };
+      }
+    }
+
+    if (isUnsupportedWalletMethodError(error)) {
+      return {
+        ok: false,
+        reason: "manual",
+        message: "This wallet cannot switch networks automatically. Please add Arc Testnet manually."
+      };
+    }
+
+    return { ok: false, reason: "failed", message: getFriendlyWalletError(error) };
+  }
+}
+
 export function getArcEnvReport() {
   return [
     { key: "VITE_ARC_RPC_URL", present: Boolean(arcRpcUrl) },
@@ -149,8 +239,7 @@ export function getArcAddEthereumChainParams() {
   };
 }
 
-export async function requestAddArcTestnet() {
-  const provider = getInjectedProvider();
+export async function requestAddArcTestnet(provider = getInjectedProvider()) {
 
   if (!provider) {
     throw new Error("No browser wallet was found. Open ArcNest in MetaMask, Rabby, or another EVM wallet.");
@@ -166,8 +255,7 @@ export async function requestAddArcTestnet() {
   });
 }
 
-export async function requestSwitchArcTestnet() {
-  const provider = getInjectedProvider();
+export async function requestSwitchArcTestnet(provider = getInjectedProvider(), options: { skipAddFallback?: boolean } = {}) {
 
   if (!provider) {
     throw new Error("No browser wallet was found. Open ArcNest in MetaMask, Rabby, or another EVM wallet.");
@@ -180,12 +268,56 @@ export async function requestSwitchArcTestnet() {
     });
   } catch (error) {
     if (isUnknownChainError(error)) {
-      await requestAddArcTestnet();
+      if (options.skipAddFallback) {
+        throw error;
+      }
+
+      await requestAddArcTestnet(provider);
+      await provider.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: toHexChainId(arcNetwork.chainId) }]
+      });
       return;
     }
 
     throw error;
   }
+}
+
+async function verifyArcNetwork(provider?: Eip1193Provider): Promise<ArcNetworkSwitchResult> {
+  if (!provider) {
+    return { ok: true };
+  }
+
+  try {
+    const currentChainId = await requestProviderChainId(provider);
+
+    if (!currentChainId || currentChainId === arcNetwork.chainId) {
+      return { ok: true, chainId: currentChainId };
+    }
+
+    return {
+      ok: false,
+      reason: "manual",
+      message: "Your wallet did not switch automatically. Please add Arc Testnet manually."
+    };
+  } catch {
+    return { ok: true };
+  }
+}
+
+async function requestProviderChainId(provider: Eip1193Provider) {
+  const result = await provider.request({ method: "eth_chainId" });
+  return typeof result === "string" ? parseChainId(result) : undefined;
+}
+
+export async function getWalletProviderFromConnector(connector: unknown): Promise<Eip1193Provider | undefined> {
+  if (!isRecord(connector) || typeof connector.getProvider !== "function") {
+    return undefined;
+  }
+
+  const provider = await connector.getProvider();
+  return isEip1193Provider(provider) ? provider : undefined;
 }
 
 function readEnv(key: string) {
@@ -219,16 +351,46 @@ function getInjectedProvider(): Eip1193Provider | undefined {
   return (window as Window & { ethereum?: Eip1193Provider }).ethereum;
 }
 
-function isUnknownChainError(error: unknown) {
+export function isUnknownChainError(error: unknown) {
   if (!isRecord(error)) {
     return false;
   }
 
-  return error.code === 4902 || error.code === -32603 || String(error.message ?? "").toLowerCase().includes("unrecognized chain");
+  const message = String(error.message ?? "").toLowerCase();
+  return error.code === 4902 || error.code === -32603 || message.includes("unrecognized chain") || message.includes("chain not added") || message.includes("unknown chain");
+}
+
+export function isUserRejectedWalletError(error: unknown) {
+  if (!isRecord(error)) {
+    return false;
+  }
+
+  const message = String(error.message ?? "").toLowerCase();
+  return error.code === 4001 || message.includes("user rejected") || message.includes("rejected the request") || message.includes("denied");
+}
+
+export function isUnsupportedWalletMethodError(error: unknown) {
+  if (!isRecord(error)) {
+    return false;
+  }
+
+  const message = String(error.message ?? "").toLowerCase();
+  return (
+    error.code === 4200 ||
+    error.code === -32601 ||
+    message.includes("unsupported") ||
+    message.includes("not supported") ||
+    message.includes("does not support") ||
+    message.includes("method not found")
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function isEip1193Provider(value: unknown): value is Eip1193Provider {
+  return isRecord(value) && typeof value.request === "function";
 }
 
 function getErrorMessage(error: unknown) {

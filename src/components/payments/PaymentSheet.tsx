@@ -3,13 +3,14 @@ import { CheckCircle2, Copy, ExternalLink, RotateCcw, ShieldCheck, TriangleAlert
 import { useConnection, useSwitchChain } from "wagmi";
 import type { Payment, PaymentRequest } from "../../models";
 import type { ArcPaymentMode } from "../../lib/arc";
-import { arcNetwork, getArcExplorerTxUrl, getFriendlyWalletError, isWrongArcNetwork, requestSwitchArcTestnet } from "../../lib/arc";
+import { arcNetwork, getArcExplorerTxUrl, isWrongArcNetwork, switchArcTestnetWithFallback } from "../../lib/arc";
 import { CIRCLE_FAUCET_URL } from "../../lib/appMeta";
 import { formatUSDC, formatVND, shortAddress } from "../../lib/format";
 import { useClipboardToast } from "../../hooks/useClipboardToast";
 import { Button } from "../ui/Button";
 import { CopyToast } from "../ui/CopyToast";
 import { BottomSheet } from "../ui/Modal";
+import { ArcNetworkManualSetup } from "../wallet/ArcNetworkManualSetup";
 import { PaymentStatus } from "./PaymentStatus";
 
 type PaymentSheetProps = {
@@ -42,6 +43,8 @@ export function PaymentSheet({
   const connection = useConnection();
   const { switchChainAsync } = useSwitchChain();
   const [networkError, setNetworkError] = useState<string>();
+  const [networkStatus, setNetworkStatus] = useState<string>();
+  const [manualSetupRequired, setManualSetupRequired] = useState(false);
   const { toastMessage, copyWithToast } = useClipboardToast();
   const insufficient = request ? Number(request.amountUSDC) > Number(walletBalanceUSDC) : false;
 
@@ -62,6 +65,8 @@ export function PaymentSheet({
   const subtitle = paymentMode === "testnet" ? "Testnet payment" : "Demo payment";
   const confirmLabel = confirming
     ? "Confirming"
+    : networkStatus
+      ? "Switching network"
     : wrongNetwork
       ? "Wrong network"
       : needsWallet
@@ -74,20 +79,27 @@ export function PaymentSheet({
 
   async function switchNetwork() {
     setNetworkError(undefined);
+    setManualSetupRequired(false);
+    setNetworkStatus("Switching network...");
 
     try {
-      if (connection.isConnected) {
-        await switchChainAsync({ chainId: arcNetwork.chainId });
+      const result = await switchArcTestnetWithFallback({
+        connector: connection.connector,
+        switchChain: connection.isConnected ? () => switchChainAsync({ chainId: arcNetwork.chainId }) : undefined
+      });
+
+      if (result.ok) {
+        setNetworkStatus("Arc Testnet connected.");
+        window.setTimeout(() => setNetworkStatus(undefined), 1200);
         return;
       }
 
-      await requestSwitchArcTestnet();
+      setNetworkStatus(undefined);
+      setNetworkError(result.message);
+      setManualSetupRequired(result.reason === "manual");
     } catch (error) {
-      try {
-        await requestSwitchArcTestnet();
-      } catch (fallbackError) {
-        setNetworkError(getFriendlyWalletError(fallbackError || error));
-      }
+      setNetworkStatus(undefined);
+      setNetworkError(error instanceof Error ? error.message : "Network switch could not be completed.");
     }
   }
 
@@ -221,12 +233,14 @@ export function PaymentSheet({
                 <div className="surface-row rounded-[18px] p-3 text-sm text-[var(--danger)]">
                   Switch your wallet to Arc Testnet before confirming.
                 </div>
-                <Button fullWidth variant="secondary" icon={<RotateCcw size={18} />} onClick={() => void switchNetwork()}>
-                  Switch to Arc Testnet
+                <Button fullWidth variant="secondary" icon={<RotateCcw size={18} />} onClick={() => void switchNetwork()} disabled={Boolean(networkStatus)}>
+                  {networkStatus ? "Switching network..." : "Switch to Arc Testnet"}
                 </Button>
               </div>
             ) : null}
+            {networkStatus ? <div className="surface-row rounded-[18px] p-3 text-sm text-[var(--text-secondary)]">{networkStatus}</div> : null}
             {networkError ? <div className="surface-row rounded-[18px] p-3 text-sm text-[var(--danger)]">{networkError}</div> : null}
+            {manualSetupRequired ? <ArcNetworkManualSetup /> : null}
             {needsWallet ? (
               <div className="surface-row rounded-[18px] p-3 text-sm text-[var(--text-secondary)]">
                 Connect a test wallet before sending a testnet payment.

@@ -7,15 +7,18 @@ import {
   getArcEnvReport,
   getArcPaymentMode,
   getFriendlyWalletError,
+  getWalletProviderFromConnector,
+  isUnsupportedWalletMethodError,
   isWrongArcNetwork,
   requestAddArcTestnet,
-  requestSwitchArcTestnet
+  switchArcTestnetWithFallback
 } from "../../lib/arc";
 import { shortAddress } from "../../lib/format";
 import { getWalletRuntime, getWalletRuntimeLabel, openMetaMaskDeepLink } from "../../lib/mobileWallet";
 import { useSettingsStore } from "../../state/useSettingsStore";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
+import { ArcNetworkManualSetup } from "./ArcNetworkManualSetup";
 import { NetworkBadge } from "./NetworkBadge";
 
 type WalletConnectPanelProps = {
@@ -35,6 +38,8 @@ export function WalletConnectPanel({ compact = false, title = "Wallet login", on
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [awaitingWalletReturn, setAwaitingWalletReturn] = useState(false);
   const [returnStatus, setReturnStatus] = useState<string>();
+  const [networkStatus, setNetworkStatus] = useState<string>();
+  const [manualSetupRequired, setManualSetupRequired] = useState(false);
   const persistedConnection = useRef("");
   const lastConnectedAddress = useRef<string>();
   const latestConnection = useRef({ address: connection.address, isConnected: connection.isConnected });
@@ -48,6 +53,7 @@ export function WalletConnectPanel({ compact = false, title = "Wallet login", on
   const connectedAddress = connection.address ? shortAddress(connection.address) : "Not connected";
   const connectableWallets = connectors.filter((connector) => connector.type !== "injected" || typeof window !== "undefined");
   const connectBusy = connecting || reconnecting;
+  const networkBusy = switching || Boolean(networkStatus);
 
   useEffect(() => {
     latestConnection.current = {
@@ -212,30 +218,48 @@ export function WalletConnectPanel({ compact = false, title = "Wallet login", on
 
   async function switchToArc() {
     setLocalError(undefined);
+    setManualSetupRequired(false);
+    setNetworkStatus("Switching network...");
 
     try {
-      if (connection.isConnected) {
-        await switchChainAsync({ chainId: arcNetwork.chainId });
+      const result = await switchArcTestnetWithFallback({
+        connector: connection.connector,
+        switchChain: connection.isConnected ? () => switchChainAsync({ chainId: arcNetwork.chainId }) : undefined
+      });
+
+      if (result.ok) {
+        setNetworkStatus("Arc Testnet connected.");
+        window.setTimeout(() => setNetworkStatus(undefined), 1200);
         return;
       }
 
-      await requestSwitchArcTestnet();
+      setNetworkStatus(undefined);
+      setLocalError(result.message);
+      setManualSetupRequired(result.reason === "manual");
     } catch (error) {
-      try {
-        await requestSwitchArcTestnet();
-      } catch (fallbackError) {
-        setLocalError(getFriendlyWalletError(fallbackError || error));
-      }
+      setNetworkStatus(undefined);
+      setLocalError(getFriendlyWalletError(error));
     }
   }
 
   async function addArcTestnet() {
     setLocalError(undefined);
+    setManualSetupRequired(false);
+    setNetworkStatus("Adding Arc Testnet...");
 
     try {
-      await requestAddArcTestnet();
+      const provider = (await getWalletProviderFromConnector(connection.connector)) ?? undefined;
+      await requestAddArcTestnet(provider);
+      setNetworkStatus("Arc Testnet added.");
+      window.setTimeout(() => setNetworkStatus(undefined), 1200);
     } catch (error) {
-      setLocalError(getFriendlyWalletError(error));
+      setNetworkStatus(undefined);
+      setLocalError(
+        isUnsupportedWalletMethodError(error)
+          ? "This wallet cannot add networks automatically. Please add Arc Testnet manually."
+          : getFriendlyWalletError(error)
+      );
+      setManualSetupRequired(true);
     }
   }
 
@@ -258,6 +282,7 @@ export function WalletConnectPanel({ compact = false, title = "Wallet login", on
 
         {walletError ? <div className="surface-row mt-4 rounded-[18px] p-3 text-sm text-[var(--danger)]">{walletError}</div> : null}
         {returnStatus ? <div className="surface-row mt-4 rounded-[18px] p-3 text-sm text-[var(--text-secondary)]">{returnStatus}</div> : null}
+        {networkStatus ? <div className="surface-row mt-4 rounded-[18px] p-3 text-sm text-[var(--text-secondary)]">{networkStatus}</div> : null}
 
         {missingConfig ? (
           <div className="surface-row mt-4 rounded-[18px] p-3 text-sm text-[var(--text-secondary)]">
@@ -270,6 +295,8 @@ export function WalletConnectPanel({ compact = false, title = "Wallet login", on
             For the smoothest mobile signing flow, open ArcNest in a wallet browser or use WalletConnect.
           </div>
         ) : null}
+
+        {manualSetupRequired ? <div className="mt-4"><ArcNetworkManualSetup /></div> : null}
 
         {!connection.isConnected ? (
           <div className="mt-4 grid gap-3">
@@ -285,8 +312,8 @@ export function WalletConnectPanel({ compact = false, title = "Wallet login", on
             ) : null}
           </div>
         ) : wrongNetwork ? (
-          <Button fullWidth className="mt-4" variant="secondary" icon={<RefreshCcw size={16} />} onClick={() => void switchToArc()} disabled={switching}>
-            Switch to Arc Testnet
+          <Button fullWidth className="mt-4" variant="secondary" icon={<RefreshCcw size={16} />} onClick={() => void switchToArc()} disabled={networkBusy}>
+            {networkBusy ? "Switching network..." : "Switch to Arc Testnet"}
           </Button>
         ) : (
           <div className="surface-row mt-4 rounded-[18px] p-3 text-sm text-[var(--text-secondary)]">
@@ -310,11 +337,11 @@ export function WalletConnectPanel({ compact = false, title = "Wallet login", on
                 Disconnect
               </Button>
             ) : null}
-            <Button variant="secondary" icon={<Wifi size={16} />} onClick={() => void switchToArc()} disabled={missingConfig || switching}>
-              Switch Arc
+            <Button variant="secondary" icon={<Wifi size={16} />} onClick={() => void switchToArc()} disabled={missingConfig || networkBusy}>
+              {networkBusy ? "Switching" : "Switch Arc"}
             </Button>
-            <Button variant="muted" icon={<PlugZap size={16} />} onClick={() => void addArcTestnet()} disabled={missingConfig}>
-              Add Arc Testnet
+            <Button variant="muted" icon={<PlugZap size={16} />} onClick={() => void addArcTestnet()} disabled={missingConfig || networkBusy}>
+              {networkBusy ? "Adding" : "Add Arc Testnet"}
             </Button>
             {!connection.isConnected
               ? connectableWallets.slice(2).map((connector) => (
@@ -347,6 +374,7 @@ export function WalletConnectPanel({ compact = false, title = "Wallet login", on
 
       {walletError ? <div className="surface-row mt-4 rounded-[18px] p-3 text-sm text-[var(--danger)]">{walletError}</div> : null}
       {returnStatus ? <div className="surface-row mt-4 rounded-[18px] p-3 text-sm text-[var(--text-secondary)]">{returnStatus}</div> : null}
+      {networkStatus ? <div className="surface-row mt-4 rounded-[18px] p-3 text-sm text-[var(--text-secondary)]">{networkStatus}</div> : null}
 
       {missingConfig ? (
         <div className="surface-row mt-4 rounded-[18px] p-3 text-sm text-[var(--text-secondary)]">
@@ -370,6 +398,8 @@ export function WalletConnectPanel({ compact = false, title = "Wallet login", on
         Testnet only. Use a new test wallet. ArcNest never asks for seed phrases or private keys.
       </div>
 
+      {manualSetupRequired ? <div className="mt-4"><ArcNetworkManualSetup /></div> : null}
+
       <div className="mt-4 grid grid-cols-2 gap-3">
         {walletRuntime.isMobile && !walletRuntime.isInMetaMask ? (
           <Button variant="secondary" icon={<ExternalLink size={16} />} onClick={() => openMetaMaskDeepLink()}>
@@ -388,16 +418,16 @@ export function WalletConnectPanel({ compact = false, title = "Wallet login", on
           ))
         )}
         {wrongNetwork ? (
-          <Button variant="secondary" icon={<RefreshCcw size={16} />} onClick={() => void switchToArc()} disabled={switching}>
-            Switch Network
+          <Button variant="secondary" icon={<RefreshCcw size={16} />} onClick={() => void switchToArc()} disabled={networkBusy}>
+            {networkBusy ? "Switching" : "Switch Network"}
           </Button>
         ) : (
-          <Button variant="secondary" icon={<Wifi size={16} />} onClick={() => void switchToArc()} disabled={missingConfig || switching}>
-            Switch Arc
+          <Button variant="secondary" icon={<Wifi size={16} />} onClick={() => void switchToArc()} disabled={missingConfig || networkBusy}>
+            {networkBusy ? "Switching" : "Switch Arc"}
           </Button>
         )}
-        <Button variant="muted" icon={<PlugZap size={16} />} onClick={() => void addArcTestnet()} disabled={missingConfig}>
-          Add Arc Testnet
+        <Button variant="muted" icon={<PlugZap size={16} />} onClick={() => void addArcTestnet()} disabled={missingConfig || networkBusy}>
+          {networkBusy ? "Adding" : "Add Arc Testnet"}
         </Button>
       </div>
 
