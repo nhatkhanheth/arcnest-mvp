@@ -93,7 +93,7 @@
   }
 
   .has-global-actions .screen-pad {
-    padding-top: calc(max(16px, env(safe-area-inset-top)) + 76px);
+    padding-top: 14px;
   }
 
   .has-global-actions .screen-pad > header:first-child {
