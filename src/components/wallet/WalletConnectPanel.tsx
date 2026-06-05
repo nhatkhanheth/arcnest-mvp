@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ExternalLink, LogOut, PlugZap, RefreshCcw, Wallet, Wifi } from "lucide-react";
-import { useConnect, useConnection, useDisconnect, useSwitchChain } from "wagmi";
+import { useConnect, useConnection, useDisconnect, useReconnect, useSwitchChain } from "wagmi";
 import {
   arcNetwork,
   formatArcChain,
@@ -20,19 +20,25 @@ import { NetworkBadge } from "./NetworkBadge";
 
 type WalletConnectPanelProps = {
   compact?: boolean;
+  title?: string;
   onConnected?: () => void;
 };
 
-export function WalletConnectPanel({ compact = false, onConnected }: WalletConnectPanelProps = {}) {
+export function WalletConnectPanel({ compact = false, title = "Wallet login", onConnected }: WalletConnectPanelProps = {}) {
   const connection = useConnection();
   const { connectAsync, connectors, error: connectError, isPending: connecting } = useConnect();
   const { disconnectAsync, error: disconnectError, isPending: disconnecting } = useDisconnect();
+  const { reconnectAsync, isPending: reconnecting } = useReconnect();
   const { switchChainAsync, error: switchError, isPending: switching } = useSwitchChain();
   const { disconnectConnectedWallet, upsertConnectedWallet } = useSettingsStore();
   const [localError, setLocalError] = useState<string>();
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [awaitingWalletReturn, setAwaitingWalletReturn] = useState(false);
+  const [returnStatus, setReturnStatus] = useState<string>();
   const persistedConnection = useRef("");
   const lastConnectedAddress = useRef<string>();
+  const latestConnection = useRef({ address: connection.address, isConnected: connection.isConnected });
+  const recoveryStartedAt = useRef<number>();
   const walletRuntime = getWalletRuntime();
 
   const paymentMode = getArcPaymentMode();
@@ -41,6 +47,14 @@ export function WalletConnectPanel({ compact = false, onConnected }: WalletConne
   const walletError = localError ?? getFirstFriendlyError(connectError, disconnectError, switchError);
   const connectedAddress = connection.address ? shortAddress(connection.address) : "Not connected";
   const connectableWallets = connectors.filter((connector) => connector.type !== "injected" || typeof window !== "undefined");
+  const connectBusy = connecting || reconnecting;
+
+  useEffect(() => {
+    latestConnection.current = {
+      address: connection.address,
+      isConnected: connection.isConnected
+    };
+  }, [connection.address, connection.isConnected]);
 
   useEffect(() => {
     if (!connection.isConnected || !connection.address) {
@@ -61,6 +75,9 @@ export function WalletConnectPanel({ compact = false, onConnected }: WalletConne
 
     persistedConnection.current = connectionKey;
     lastConnectedAddress.current = connection.address;
+    setAwaitingWalletReturn(false);
+    setReturnStatus(undefined);
+    recoveryStartedAt.current = undefined;
     upsertConnectedWallet({
       address: connection.address,
       chainId: connection.chainId,
@@ -80,6 +97,78 @@ export function WalletConnectPanel({ compact = false, onConnected }: WalletConne
     upsertConnectedWallet
   ]);
 
+  useEffect(() => {
+    if (!awaitingWalletReturn) {
+      return;
+    }
+
+    let cancelled = false;
+    let retryTimer: number | undefined;
+
+    async function recoverWalletSession() {
+      if (cancelled) {
+        return;
+      }
+
+      if (latestConnection.current.isConnected && latestConnection.current.address) {
+        setAwaitingWalletReturn(false);
+        setReturnStatus(undefined);
+        recoveryStartedAt.current = undefined;
+        return;
+      }
+
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        setReturnStatus("Waiting for wallet approval...");
+        return;
+      }
+
+      recoveryStartedAt.current ??= Date.now();
+      setReturnStatus("Returning to ArcNest...");
+
+      try {
+        await reconnectAsync();
+      } catch {
+        // Mobile wallets can briefly reject reconnect while the browser is restoring focus.
+      }
+
+      if (latestConnection.current.isConnected && latestConnection.current.address) {
+        setAwaitingWalletReturn(false);
+        setReturnStatus(undefined);
+        recoveryStartedAt.current = undefined;
+        return;
+      }
+
+      if (Date.now() - recoveryStartedAt.current < 10_000) {
+        retryTimer = window.setTimeout(() => void recoverWalletSession(), 750);
+        return;
+      }
+
+      setAwaitingWalletReturn(false);
+      setReturnStatus(undefined);
+      recoveryStartedAt.current = undefined;
+      setLocalError("Wallet connection was not completed. Choose a wallet and try again.");
+    }
+
+    function handleAppReturn() {
+      void recoverWalletSession();
+    }
+
+    window.addEventListener("focus", handleAppReturn);
+    window.addEventListener("pageshow", handleAppReturn);
+    document.addEventListener("visibilitychange", handleAppReturn);
+    retryTimer = window.setTimeout(() => void recoverWalletSession(), 750);
+
+    return () => {
+      cancelled = true;
+      if (retryTimer) {
+        window.clearTimeout(retryTimer);
+      }
+      window.removeEventListener("focus", handleAppReturn);
+      window.removeEventListener("pageshow", handleAppReturn);
+      document.removeEventListener("visibilitychange", handleAppReturn);
+    };
+  }, [awaitingWalletReturn, reconnectAsync]);
+
   async function connectWallet(connector = connectableWallets[0]) {
     setLocalError(undefined);
 
@@ -89,11 +178,18 @@ export function WalletConnectPanel({ compact = false, onConnected }: WalletConne
     }
 
     try {
+      setAwaitingWalletReturn(true);
+      setReturnStatus("Waiting for wallet approval...");
+      recoveryStartedAt.current = undefined;
       await connectAsync({
         connector,
         ...(arcNetwork.chainId ? { chainId: arcNetwork.chainId } : {})
       });
+      setReturnStatus("Returning to ArcNest...");
     } catch (error) {
+      setAwaitingWalletReturn(false);
+      setReturnStatus(undefined);
+      recoveryStartedAt.current = undefined;
       setLocalError(getFriendlyWalletError(error));
     }
   }
@@ -148,7 +244,7 @@ export function WalletConnectPanel({ compact = false, onConnected }: WalletConne
       <Card className="text-left">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-[var(--text-muted)]">Wallet login</p>
+            <p className="text-sm font-semibold text-[var(--text-muted)]">{title}</p>
             <p className="number mt-2 truncate text-lg font-bold">{connectedAddress}</p>
             <p className="mt-1 text-xs text-[var(--text-muted)]">
               {connection.isConnected ? connection.connector?.name ?? "Connected wallet" : "Choose a wallet to continue"}
@@ -161,6 +257,7 @@ export function WalletConnectPanel({ compact = false, onConnected }: WalletConne
         </div>
 
         {walletError ? <div className="surface-row mt-4 rounded-[18px] p-3 text-sm text-[var(--danger)]">{walletError}</div> : null}
+        {returnStatus ? <div className="surface-row mt-4 rounded-[18px] p-3 text-sm text-[var(--text-secondary)]">{returnStatus}</div> : null}
 
         {missingConfig ? (
           <div className="surface-row mt-4 rounded-[18px] p-3 text-sm text-[var(--text-secondary)]">
@@ -177,8 +274,8 @@ export function WalletConnectPanel({ compact = false, onConnected }: WalletConne
         {!connection.isConnected ? (
           <div className="mt-4 grid gap-3">
             {connectableWallets.slice(0, 2).map((connector) => (
-              <Button key={connector.uid} fullWidth icon={<Wallet size={16} />} onClick={() => void connectWallet(connector)} disabled={connecting}>
-                {connecting ? "Connecting" : connector.name}
+              <Button key={connector.uid} fullWidth icon={<Wallet size={16} />} onClick={() => void connectWallet(connector)} disabled={connectBusy}>
+                {connectBusy ? "Connecting" : connector.name}
               </Button>
             ))}
             {connectableWallets.length === 0 ? (
@@ -221,8 +318,8 @@ export function WalletConnectPanel({ compact = false, onConnected }: WalletConne
             </Button>
             {!connection.isConnected
               ? connectableWallets.slice(2).map((connector) => (
-                  <Button key={connector.uid} variant="muted" icon={<Wallet size={16} />} onClick={() => void connectWallet(connector)} disabled={connecting}>
-                    {connector.name}
+                  <Button key={connector.uid} variant="muted" icon={<Wallet size={16} />} onClick={() => void connectWallet(connector)} disabled={connectBusy}>
+                    {connectBusy ? "Connecting" : connector.name}
                   </Button>
                 ))
               : null}
@@ -249,6 +346,7 @@ export function WalletConnectPanel({ compact = false, onConnected }: WalletConne
       </div>
 
       {walletError ? <div className="surface-row mt-4 rounded-[18px] p-3 text-sm text-[var(--danger)]">{walletError}</div> : null}
+      {returnStatus ? <div className="surface-row mt-4 rounded-[18px] p-3 text-sm text-[var(--text-secondary)]">{returnStatus}</div> : null}
 
       {missingConfig ? (
         <div className="surface-row mt-4 rounded-[18px] p-3 text-sm text-[var(--text-secondary)]">
@@ -284,8 +382,8 @@ export function WalletConnectPanel({ compact = false, onConnected }: WalletConne
           </Button>
         ) : (
           connectableWallets.slice(0, 2).map((connector) => (
-            <Button key={connector.uid} icon={<Wallet size={16} />} onClick={() => void connectWallet(connector)} disabled={connecting}>
-              {connecting ? "Connecting" : connector.name}
+            <Button key={connector.uid} icon={<Wallet size={16} />} onClick={() => void connectWallet(connector)} disabled={connectBusy}>
+              {connectBusy ? "Connecting" : connector.name}
             </Button>
           ))
         )}

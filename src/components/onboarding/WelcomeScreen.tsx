@@ -1,4 +1,4 @@
-import { ExternalLink, LockKeyhole, ShieldAlert, Wallet } from "lucide-react";
+import { ExternalLink, LockKeyhole, RotateCcw, ShieldAlert, Wallet, XCircle } from "lucide-react";
 import { useState } from "react";
 import { dynamicEnabled } from "../../lib/dynamic";
 import { APP_VERSION, CIRCLE_FAUCET_URL, CREATOR_CREDIT } from "../../lib/appMeta";
@@ -20,6 +20,7 @@ type WelcomeScreenProps = {
   walletSessionActive?: boolean;
   unlockError?: string;
   onUnlockApp?: (passcode: string) => void;
+  onForgetSavedWallet?: () => void;
 };
 
 export function WelcomeScreen({
@@ -31,9 +32,11 @@ export function WelcomeScreen({
   previousWalletAddress,
   walletSessionActive,
   unlockError,
-  onUnlockApp
+  onUnlockApp,
+  onForgetSavedWallet
 }: WelcomeScreenProps) {
   const [showWalletConnect, setShowWalletConnect] = useState(false);
+  const [walletPanelTitle, setWalletPanelTitle] = useState("Choose wallet");
   const [showDynamic, setShowDynamic] = useState(false);
   const [passcode, setPasscode] = useState("");
   const walletRuntime = getWalletRuntime();
@@ -46,6 +49,17 @@ export function WelcomeScreen({
     }
 
     setShowWalletConnect(true);
+    setWalletPanelTitle("Choose wallet");
+  }
+
+  function handleConnectAnotherWallet() {
+    setShowWalletConnect(true);
+    setWalletPanelTitle("Connect another wallet");
+  }
+
+  function handleReconnectWallet() {
+    setShowWalletConnect(true);
+    setWalletPanelTitle(shortPreviousWallet ? `Reconnect ${shortPreviousWallet}` : "Reconnect wallet");
   }
 
   return (
@@ -110,13 +124,25 @@ export function WelcomeScreen({
           <Button fullWidth size="lg" icon={<Wallet size={18} />} onClick={handleWalletLogin}>
             {walletSessionActive && shortPreviousWallet
               ? `Continue with ${shortPreviousWallet}`
-              : hasPreviousWallet && shortPreviousWallet
-                ? `Reconnect ${shortPreviousWallet}`
-                : "Login with Wallet"}
+              : "Login with Wallet"}
           </Button>
-          {hasPreviousWallet ? (
+          {hasPreviousWallet && !walletSessionActive ? (
+            <div className="grid gap-3">
+              <Button fullWidth size="lg" variant="secondary" icon={<Wallet size={18} />} onClick={handleConnectAnotherWallet}>
+                Connect another wallet
+              </Button>
+              {shortPreviousWallet ? (
+                <Button fullWidth size="md" variant="muted" icon={<RotateCcw size={16} />} onClick={handleReconnectWallet}>
+                  Reconnect {shortPreviousWallet}
+                </Button>
+              ) : null}
+              <Button fullWidth size="sm" variant="ghost" icon={<XCircle size={15} />} onClick={onForgetSavedWallet}>
+                Forget saved wallet
+              </Button>
+            </div>
+          ) : hasPreviousWallet ? (
             <div className="px-1 text-center text-xs text-[var(--text-muted)]">
-              {walletSessionActive ? "Your wallet is connected. Continue to ArcNest." : "Reconnect your saved wallet or choose another wallet."}
+              Your wallet is connected. Continue to ArcNest.
             </div>
           ) : null}
           {walletRuntime.isMobile && !walletRuntime.isInMetaMask ? (
@@ -137,7 +163,7 @@ export function WelcomeScreen({
 
         {showWalletConnect ? (
           <div className="space-y-3">
-            <WalletConnectPanel compact onConnected={onContinueWallet} />
+            <WalletConnectPanel compact title={walletPanelTitle} onConnected={onContinueWallet} />
           </div>
         ) : null}
 

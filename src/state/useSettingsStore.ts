@@ -435,6 +435,19 @@ const actions = {
     syncRemoteSettings();
     syncRemoteWallets(wallets);
   },
+  forgetLocalWalletHints() {
+    setState((current) => {
+      const wallets = current.wallets.filter((wallet) => wallet.status === "active");
+      const activeWalletId = wallets.find((wallet) => wallet.id === current.activeWalletId)?.id ?? wallets[0]?.id ?? "";
+
+      return {
+        ...current,
+        wallets,
+        activeWalletId,
+        walletConnected: wallets.length > 0
+      };
+    });
+  },
   resetLocalUiState() {
     setState(() => initialState);
   }

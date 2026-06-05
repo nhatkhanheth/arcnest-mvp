@@ -481,10 +481,16 @@ export function App() {
   }
 
   function enterWalletSession() {
-    if (!isWalletSessionActive(settings, connection) || !primaryWallet.address) {
+    if (!connection.isConnected || !connection.address) {
       return;
     }
 
+    settings.upsertConnectedWallet({
+      address: connection.address,
+      chainId: connection.chainId,
+      connectorId: connection.connector?.id,
+      connectorName: connection.connector?.name
+    });
     setStoredSessionMode("wallet");
     setSessionMode("wallet");
     completeOnboarding();
@@ -534,6 +540,10 @@ export function App() {
     setStoredOnboardingComplete(false);
     setOnboardingComplete(false);
     setSettingsOpen(false);
+  }
+
+  function forgetSavedWalletHint() {
+    settings.forgetLocalWalletHints();
   }
 
   function updateAppLock(nextLock: AppLockState) {
@@ -653,6 +663,7 @@ export function App() {
             walletSessionActive={walletSessionActive}
             unlockError={unlockError}
             onUnlockApp={unlockApp}
+            onForgetSavedWallet={forgetSavedWalletHint}
           />
         </div>
       </div>
