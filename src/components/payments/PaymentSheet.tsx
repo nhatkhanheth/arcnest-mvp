@@ -1,9 +1,9 @@
-import { useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { CheckCircle2, Copy, ExternalLink, RotateCcw, ShieldCheck, TriangleAlert } from "lucide-react";
 import { useConnection, useSwitchChain } from "wagmi";
 import type { Payment, PaymentRequest } from "../../models";
 import type { ArcPaymentMode } from "../../lib/arc";
-import { arcNetwork, getArcExplorerTxUrl, isWrongArcNetwork, switchArcTestnetWithFallback } from "../../lib/arc";
+import { arcNetwork, getArcExplorerTxUrl, isWrongArcNetwork, readArcNetworkSnapshot, switchArcTestnetWithFallback } from "../../lib/arc";
 import { CIRCLE_FAUCET_URL } from "../../lib/appMeta";
 import { formatUSDC, formatVND, shortAddress } from "../../lib/format";
 import { useClipboardToast } from "../../hooks/useClipboardToast";
@@ -45,6 +45,7 @@ export function PaymentSheet({
   const [networkError, setNetworkError] = useState<string>();
   const [networkStatus, setNetworkStatus] = useState<string>();
   const [manualSetupRequired, setManualSetupRequired] = useState(false);
+  const [verifiedChainId, setVerifiedChainId] = useState<number>();
   const { toastMessage, copyWithToast } = useClipboardToast();
   const insufficient = request ? Number(request.amountUSDC) > Number(walletBalanceUSDC) : false;
 
@@ -57,7 +58,9 @@ export function PaymentSheet({
   const failed = payment.status === "failed";
   const cancelled = payment.status === "cancelled";
   const missingConfig = arcNetwork.missingPaymentEnvVars.length > 0;
-  const wrongNetwork = paymentMode === "testnet" && connection.isConnected && isWrongArcNetwork(connection.chainId);
+  const effectiveChainId = verifiedChainId ?? connection.chainId;
+  const isArcTestnet = effectiveChainId === arcNetwork.chainId;
+  const wrongNetwork = paymentMode === "testnet" && connection.isConnected && isWrongArcNetwork(effectiveChainId);
   const needsWallet = paymentMode === "testnet" && !connection.isConnected;
   const explorerTxUrl = payment.txHash ? getArcExplorerTxUrl(payment.txHash) : undefined;
   const payerWalletAddress = request.fromWalletAddress;
@@ -77,6 +80,56 @@ export function PaymentSheet({
           ? "Pay on Arc Testnet"
           : "Demo payment";
 
+  const clearArcNetworkErrors = useCallback(() => {
+    setNetworkError(undefined);
+    setManualSetupRequired(false);
+    setNetworkStatus(undefined);
+  }, []);
+
+  const refreshVerifiedNetwork = useCallback(async () => {
+    const snapshot = await readArcNetworkSnapshot(connection.connector);
+
+    if (snapshot.chainId) {
+      setVerifiedChainId(snapshot.chainId);
+    }
+
+    if (snapshot.isArc) {
+      clearArcNetworkErrors();
+    }
+
+    return snapshot;
+  }, [clearArcNetworkErrors, connection.connector]);
+
+  useEffect(() => {
+    setVerifiedChainId(connection.chainId);
+
+    if (connection.chainId === arcNetwork.chainId) {
+      clearArcNetworkErrors();
+    }
+  }, [clearArcNetworkErrors, connection.address, connection.chainId]);
+
+  useEffect(() => {
+    if (!open || !connection.isConnected) {
+      return;
+    }
+
+    function handleAppReturn() {
+      void refreshVerifiedNetwork();
+    }
+
+    window.addEventListener("focus", handleAppReturn);
+    window.addEventListener("pageshow", handleAppReturn);
+    window.addEventListener("online", handleAppReturn);
+    document.addEventListener("visibilitychange", handleAppReturn);
+
+    return () => {
+      window.removeEventListener("focus", handleAppReturn);
+      window.removeEventListener("pageshow", handleAppReturn);
+      window.removeEventListener("online", handleAppReturn);
+      document.removeEventListener("visibilitychange", handleAppReturn);
+    };
+  }, [connection.isConnected, open, refreshVerifiedNetwork]);
+
   async function switchNetwork() {
     setNetworkError(undefined);
     setManualSetupRequired(false);
@@ -89,6 +142,16 @@ export function PaymentSheet({
       });
 
       if (result.ok) {
+        setVerifiedChainId(result.chainId ?? arcNetwork.chainId);
+        clearArcNetworkErrors();
+        setNetworkStatus("Arc Testnet connected.");
+        window.setTimeout(() => setNetworkStatus(undefined), 1200);
+        return;
+      }
+
+      const refreshed = await pollForArcNetwork(refreshVerifiedNetwork);
+
+      if (refreshed) {
         setNetworkStatus("Arc Testnet connected.");
         window.setTimeout(() => setNetworkStatus(undefined), 1200);
         return;
@@ -240,7 +303,7 @@ export function PaymentSheet({
             ) : null}
             {networkStatus ? <div className="surface-row rounded-[18px] p-3 text-sm text-[var(--text-secondary)]">{networkStatus}</div> : null}
             {networkError ? <div className="surface-row rounded-[18px] p-3 text-sm text-[var(--danger)]">{networkError}</div> : null}
-            {manualSetupRequired ? <ArcNetworkManualSetup /> : null}
+            {manualSetupRequired && !isArcTestnet ? <ArcNetworkManualSetup /> : null}
             {needsWallet ? (
               <div className="surface-row rounded-[18px] p-3 text-sm text-[var(--text-secondary)]">
                 Connect a test wallet before sending a testnet payment.
@@ -313,4 +376,21 @@ function Detail({
       </span>
     </div>
   );
+}
+
+async function pollForArcNetwork(refresh: () => Promise<{ isArc: boolean }>) {
+  const delays = [0, 500, 1000, 2000, 3000, 5000];
+
+  for (const delay of delays) {
+    if (delay > 0) {
+      await new Promise((resolve) => window.setTimeout(resolve, delay));
+    }
+
+    const snapshot = await refresh();
+    if (snapshot.isArc) {
+      return true;
+    }
+  }
+
+  return false;
 }

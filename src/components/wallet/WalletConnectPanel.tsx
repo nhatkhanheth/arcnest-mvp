@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ExternalLink, LogOut, PlugZap, RefreshCcw, Wallet, Wifi } from "lucide-react";
 import { useConnect, useConnection, useDisconnect, useReconnect, useSwitchChain } from "wagmi";
 import {
@@ -10,6 +10,7 @@ import {
   getWalletProviderFromConnector,
   isUnsupportedWalletMethodError,
   isWrongArcNetwork,
+  readArcNetworkSnapshot,
   requestAddArcTestnet,
   switchArcTestnetWithFallback
 } from "../../lib/arc";
@@ -40,6 +41,7 @@ export function WalletConnectPanel({ compact = false, title = "Wallet login", on
   const [returnStatus, setReturnStatus] = useState<string>();
   const [networkStatus, setNetworkStatus] = useState<string>();
   const [manualSetupRequired, setManualSetupRequired] = useState(false);
+  const [verifiedChainId, setVerifiedChainId] = useState<number>();
   const persistedConnection = useRef("");
   const lastConnectedAddress = useRef<string>();
   const latestConnection = useRef({ address: connection.address, isConnected: connection.isConnected });
@@ -47,9 +49,11 @@ export function WalletConnectPanel({ compact = false, title = "Wallet login", on
   const walletRuntime = getWalletRuntime();
 
   const paymentMode = getArcPaymentMode();
-  const wrongNetwork = isWrongArcNetwork(connection.chainId);
+  const effectiveChainId = verifiedChainId ?? connection.chainId;
+  const isArcTestnet = effectiveChainId === arcNetwork.chainId;
+  const wrongNetwork = isWrongArcNetwork(effectiveChainId);
   const missingConfig = arcNetwork.missingPaymentEnvVars.length > 0;
-  const walletError = localError ?? getFirstFriendlyError(connectError, disconnectError, switchError);
+  const walletError = isArcTestnet ? undefined : localError ?? getFirstFriendlyError(connectError, disconnectError, switchError);
   const connectedAddress = connection.address ? shortAddress(connection.address) : "Not connected";
   const connectableWallets = connectors.filter((connector) => connector.type !== "injected" || typeof window !== "undefined");
   const connectBusy = connecting || reconnecting;
@@ -61,6 +65,67 @@ export function WalletConnectPanel({ compact = false, title = "Wallet login", on
       isConnected: connection.isConnected
     };
   }, [connection.address, connection.isConnected]);
+
+  const clearArcNetworkErrors = useCallback(() => {
+    setLocalError(undefined);
+    setManualSetupRequired(false);
+    setNetworkStatus(undefined);
+  }, []);
+
+  const refreshVerifiedNetwork = useCallback(
+    async (options: { reconnect?: boolean } = {}) => {
+      if (options.reconnect) {
+        try {
+          await reconnectAsync();
+        } catch {
+          // Mobile wallets can be mid-return; direct provider checks below are still useful.
+        }
+      }
+
+      const snapshot = await readArcNetworkSnapshot(connection.connector);
+
+      if (snapshot.chainId) {
+        setVerifiedChainId(snapshot.chainId);
+      }
+
+      if (snapshot.isArc) {
+        clearArcNetworkErrors();
+      }
+
+      return snapshot;
+    },
+    [clearArcNetworkErrors, connection.connector, reconnectAsync]
+  );
+
+  useEffect(() => {
+    setVerifiedChainId(connection.chainId);
+
+    if (connection.chainId === arcNetwork.chainId) {
+      clearArcNetworkErrors();
+    }
+  }, [clearArcNetworkErrors, connection.address, connection.chainId]);
+
+  useEffect(() => {
+    if (!connection.isConnected) {
+      return;
+    }
+
+    function handleAppReturn() {
+      void refreshVerifiedNetwork({ reconnect: true });
+    }
+
+    window.addEventListener("focus", handleAppReturn);
+    window.addEventListener("pageshow", handleAppReturn);
+    window.addEventListener("online", handleAppReturn);
+    document.addEventListener("visibilitychange", handleAppReturn);
+
+    return () => {
+      window.removeEventListener("focus", handleAppReturn);
+      window.removeEventListener("pageshow", handleAppReturn);
+      window.removeEventListener("online", handleAppReturn);
+      document.removeEventListener("visibilitychange", handleAppReturn);
+    };
+  }, [connection.isConnected, refreshVerifiedNetwork]);
 
   useEffect(() => {
     if (!connection.isConnected || !connection.address) {
@@ -228,6 +293,16 @@ export function WalletConnectPanel({ compact = false, title = "Wallet login", on
       });
 
       if (result.ok) {
+        setVerifiedChainId(result.chainId ?? arcNetwork.chainId);
+        clearArcNetworkErrors();
+        setNetworkStatus("Arc Testnet connected.");
+        window.setTimeout(() => setNetworkStatus(undefined), 1200);
+        return;
+      }
+
+      const refreshed = await pollForArcNetwork(refreshVerifiedNetwork);
+
+      if (refreshed) {
         setNetworkStatus("Arc Testnet connected.");
         window.setTimeout(() => setNetworkStatus(undefined), 1200);
         return;
@@ -250,6 +325,14 @@ export function WalletConnectPanel({ compact = false, title = "Wallet login", on
     try {
       const provider = (await getWalletProviderFromConnector(connection.connector)) ?? undefined;
       await requestAddArcTestnet(provider);
+      const refreshed = await pollForArcNetwork(refreshVerifiedNetwork);
+
+      if (refreshed) {
+        setNetworkStatus("Arc Testnet connected.");
+        window.setTimeout(() => setNetworkStatus(undefined), 1200);
+        return;
+      }
+
       setNetworkStatus("Arc Testnet added.");
       window.setTimeout(() => setNetworkStatus(undefined), 1200);
     } catch (error) {
@@ -296,7 +379,7 @@ export function WalletConnectPanel({ compact = false, title = "Wallet login", on
           </div>
         ) : null}
 
-        {manualSetupRequired ? <div className="mt-4"><ArcNetworkManualSetup /></div> : null}
+        {manualSetupRequired && !isArcTestnet ? <div className="mt-4"><ArcNetworkManualSetup /></div> : null}
 
         {!connection.isConnected ? (
           <div className="mt-4 grid gap-3">
@@ -398,7 +481,7 @@ export function WalletConnectPanel({ compact = false, title = "Wallet login", on
         Testnet only. Use a new test wallet. ArcNest never asks for seed phrases or private keys.
       </div>
 
-      {manualSetupRequired ? <div className="mt-4"><ArcNetworkManualSetup /></div> : null}
+      {manualSetupRequired && !isArcTestnet ? <div className="mt-4"><ArcNetworkManualSetup /></div> : null}
 
       <div className="mt-4 grid grid-cols-2 gap-3">
         {walletRuntime.isMobile && !walletRuntime.isInMetaMask ? (
@@ -457,4 +540,22 @@ function ArcEnvDebug() {
 function getFirstFriendlyError(...errors: unknown[]) {
   const error = errors.find(Boolean);
   return error ? getFriendlyWalletError(error) : undefined;
+}
+
+async function pollForArcNetwork(refresh: () => Promise<{ isArc: boolean }>) {
+  const delays = [0, 500, 1000, 2000, 3000, 5000];
+
+  for (const delay of delays) {
+    if (delay > 0) {
+      await new Promise((resolve) => window.setTimeout(resolve, delay));
+    }
+
+    const snapshot = await refresh();
+
+    if (snapshot.isArc) {
+      return true;
+    }
+  }
+
+  return false;
 }

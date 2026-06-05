@@ -2,7 +2,7 @@ import type { GroupMember, Payment, PaymentRequest } from "../models";
 import { collection, doc, getDoc, onSnapshot, orderBy, query, runTransaction, setDoc } from "firebase/firestore";
 import { erc20Abi, isAddress, parseUnits, type Address, type Hash } from "viem";
 import { getConnection, getTransactionReceipt, waitForTransactionReceipt, writeContract } from "wagmi/actions";
-import { arcNetwork, getArcPaymentMode, wagmiConfig, type ArcPaymentMode } from "../lib/arc";
+import { arcNetwork, getArcPaymentMode, readArcNetworkSnapshot, wagmiConfig, type ArcPaymentMode } from "../lib/arc";
 import { USDC_VND_RATE } from "./balanceService";
 import { getFirestoreOrThrow, handleFirestoreError, sortByCreatedAt, stripUndefined, type FirestoreFailureHandler } from "./firestoreHelpers";
 
@@ -167,7 +167,9 @@ export async function executeUSDCPayment(payment: Payment, options: ExecuteUSDCP
     throw new Error("Connected wallet does not match the payer wallet for this payment.");
   }
 
-  if (connection.chainId !== chainId) {
+  const actualNetwork = await readArcNetworkSnapshot(connection.connector);
+
+  if (connection.chainId !== chainId && !actualNetwork.isArc) {
     throw new Error("Your wallet is on the wrong network. Switch to Arc before paying.");
   }
 

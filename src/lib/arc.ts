@@ -130,26 +130,36 @@ export type ArcNetworkSwitchResult =
   | { ok: true; chainId?: number }
   | { ok: false; reason: "cancelled" | "manual" | "failed"; message: string };
 
+export type ArcNetworkSnapshot = {
+  chainId?: number;
+  isArc: boolean;
+  providerFound: boolean;
+};
+
 export async function switchArcTestnetWithFallback(options: {
   switchChain?: () => Promise<unknown>;
   connector?: unknown;
 } = {}): Promise<ArcNetworkSwitchResult> {
   let switchError: unknown;
+  const provider = (await getWalletProviderFromConnector(options.connector)) ?? getInjectedProvider();
 
   if (options.switchChain) {
     try {
       await options.switchChain();
-      return await verifyArcNetwork(await getWalletProviderFromConnector(options.connector));
+      return await verifyArcNetwork(provider);
     } catch (error) {
       switchError = error;
+      const snapshot = await readArcNetworkSnapshot(options.connector, provider);
+
+      if (snapshot.isArc) {
+        return { ok: true, chainId: snapshot.chainId };
+      }
 
       if (isUserRejectedWalletError(error)) {
         return { ok: false, reason: "cancelled", message: "Network switch cancelled." };
       }
     }
   }
-
-  const provider = (await getWalletProviderFromConnector(options.connector)) ?? getInjectedProvider();
 
   if (!provider) {
     return {
@@ -213,6 +223,35 @@ export async function switchArcTestnetWithFallback(options: {
 
     return { ok: false, reason: "failed", message: getFriendlyWalletError(error) };
   }
+}
+
+export async function readArcNetworkSnapshot(connector?: unknown, providerInput?: Eip1193Provider): Promise<ArcNetworkSnapshot> {
+  const provider = providerInput ?? (await getWalletProviderFromConnector(connector)) ?? getInjectedProvider();
+  const connectorChainId = await getConnectorChainId(connector).catch(() => undefined);
+
+  if (connectorChainId) {
+    return {
+      chainId: connectorChainId,
+      isArc: connectorChainId === arcNetwork.chainId,
+      providerFound: true
+    };
+  }
+
+  if (!provider) {
+    return {
+      chainId: undefined,
+      isArc: false,
+      providerFound: false
+    };
+  }
+
+  const providerChainId = await requestProviderChainId(provider).catch(() => undefined);
+
+  return {
+    chainId: providerChainId,
+    isArc: providerChainId === arcNetwork.chainId,
+    providerFound: true
+  };
 }
 
 export function getArcEnvReport() {
@@ -318,6 +357,15 @@ export async function getWalletProviderFromConnector(connector: unknown): Promis
 
   const provider = await connector.getProvider();
   return isEip1193Provider(provider) ? provider : undefined;
+}
+
+async function getConnectorChainId(connector: unknown) {
+  if (!isRecord(connector) || typeof connector.getChainId !== "function") {
+    return undefined;
+  }
+
+  const chainId = await connector.getChainId();
+  return typeof chainId === "number" && Number.isFinite(chainId) ? chainId : undefined;
 }
 
 function readEnv(key: string) {
