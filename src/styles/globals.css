@@ -92,7 +92,11 @@
     scroll-behavior: auto !important;
   }
 
+  .has-global-actions .screen-pad {
+    padding-top: calc(max(16px, env(safe-area-inset-top)) + 76px);
+  }
+
   .has-global-actions .screen-pad > header:first-child {
-    padding-right: 188px;
+    padding-right: 0;
   }
 }
