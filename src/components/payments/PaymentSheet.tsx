@@ -47,38 +47,6 @@ export function PaymentSheet({
   const [manualSetupRequired, setManualSetupRequired] = useState(false);
   const [verifiedChainId, setVerifiedChainId] = useState<number>();
   const { toastMessage, copyWithToast } = useClipboardToast();
-  const insufficient = request ? Number(request.amountUSDC) > Number(walletBalanceUSDC) : false;
-
-  if (!request || !payment) {
-    return null;
-  }
-
-  const paid = payment.status === "paid";
-  const pending = payment.status === "pending";
-  const failed = payment.status === "failed";
-  const cancelled = payment.status === "cancelled";
-  const missingConfig = arcNetwork.missingPaymentEnvVars.length > 0;
-  const effectiveChainId = verifiedChainId ?? connection.chainId;
-  const isArcTestnet = effectiveChainId === arcNetwork.chainId;
-  const wrongNetwork = paymentMode === "testnet" && connection.isConnected && isWrongArcNetwork(effectiveChainId);
-  const needsWallet = paymentMode === "testnet" && !connection.isConnected;
-  const explorerTxUrl = payment.txHash ? getArcExplorerTxUrl(payment.txHash) : undefined;
-  const payerWalletAddress = request.fromWalletAddress;
-  const title = paid ? "Payment complete" : pending ? "Payment pending" : failed ? "Payment failed" : cancelled ? "Payment cancelled" : "Pay with USDC";
-  const subtitle = paymentMode === "testnet" ? "Testnet payment" : "Demo payment";
-  const confirmLabel = confirming
-    ? "Confirming"
-    : networkStatus
-      ? "Switching network"
-    : wrongNetwork
-      ? "Wrong network"
-      : needsWallet
-        ? "Connect wallet"
-      : missingConfig
-        ? "Demo payment"
-        : paymentMode === "testnet"
-          ? "Pay on Arc Testnet"
-          : "Demo payment";
 
   const clearArcNetworkErrors = useCallback(() => {
     setNetworkError(undefined);
@@ -129,6 +97,38 @@ export function PaymentSheet({
       document.removeEventListener("visibilitychange", handleAppReturn);
     };
   }, [connection.isConnected, open, refreshVerifiedNetwork]);
+
+  if (!request || !payment) {
+    return null;
+  }
+
+  const insufficient = Number(request.amountUSDC) > Number(walletBalanceUSDC);
+  const paid = payment.status === "paid";
+  const pending = payment.status === "pending";
+  const failed = payment.status === "failed";
+  const cancelled = payment.status === "cancelled";
+  const missingConfig = arcNetwork.missingPaymentEnvVars.length > 0;
+  const effectiveChainId = verifiedChainId ?? connection.chainId;
+  const isArcTestnet = effectiveChainId === arcNetwork.chainId;
+  const wrongNetwork = paymentMode === "testnet" && connection.isConnected && isWrongArcNetwork(effectiveChainId);
+  const needsWallet = paymentMode === "testnet" && !connection.isConnected;
+  const explorerTxUrl = payment.txHash ? getArcExplorerTxUrl(payment.txHash) : undefined;
+  const payerWalletAddress = request.fromWalletAddress;
+  const title = paid ? "Payment complete" : pending ? "Payment pending" : failed ? "Payment failed" : cancelled ? "Payment cancelled" : "Pay with USDC";
+  const subtitle = paymentMode === "testnet" ? "Testnet payment" : "Demo payment";
+  const confirmLabel = confirming
+    ? "Confirming"
+    : networkStatus
+      ? "Switching network"
+      : wrongNetwork
+        ? "Wrong network"
+        : needsWallet
+          ? "Connect wallet"
+          : missingConfig
+            ? "Demo payment"
+            : paymentMode === "testnet"
+              ? "Pay on Arc Testnet"
+              : "Demo payment";
 
   async function switchNetwork() {
     setNetworkError(undefined);
